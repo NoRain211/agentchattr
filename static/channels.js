@@ -8,6 +8,9 @@
 // ---------------------------------------------------------------------------
 
 const _channelScrollMsg = {};  // channel name -> message ID at top of viewport
+let _inboxActive = false;
+let _inboxData = null;
+let _inboxTab = 'all';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -24,6 +27,219 @@ function _getTopVisibleMsgId() {
         if (elRect.bottom > rect.top) return el.dataset.id;
     }
     return null;
+}
+
+function _ensureInboxView() {
+    let view = document.getElementById('inbox-view');
+    if (view) return view;
+
+    view = document.createElement('div');
+    view.id = 'inbox-view';
+    view.className = 'inbox-view hidden';
+
+    const messages = document.getElementById('messages');
+    if (messages && messages.parentNode) {
+        messages.parentNode.insertBefore(view, messages);
+    }
+    return view;
+}
+
+function _showTimelineView() {
+    const messages = document.getElementById('messages');
+    const typing = document.getElementById('typing-indicator');
+    const inboxView = _ensureInboxView();
+    if (messages) messages.classList.remove('hidden');
+    if (typing) typing.classList.remove('hidden');
+    if (inboxView) inboxView.classList.add('hidden');
+}
+
+function _showInboxView() {
+    const messages = document.getElementById('messages');
+    const typing = document.getElementById('typing-indicator');
+    const inboxView = _ensureInboxView();
+    if (messages) messages.classList.add('hidden');
+    if (typing) typing.classList.add('hidden');
+    if (inboxView) inboxView.classList.remove('hidden');
+}
+
+function _setInboxActive(active) {
+    _inboxActive = active;
+    const inbox = document.getElementById('sidebar-inbox');
+    if (inbox) inbox.classList.toggle('active', active);
+    if (!active) {
+        _showTimelineView();
+    }
+}
+
+function _getInboxItems(data) {
+    const mentions = (data && data.mentions) || [];
+    const ownedThreads = (data && data.owned_threads) || [];
+    const mentionItems = mentions.map(entry => ({
+        key: `mention-${entry.message_id}`,
+        kind: 'mention',
+        sortId: entry.message_id,
+        channel: entry.channel,
+        title: entry.sender,
+        subtitle: entry.is_broadcast ? 'Broadcast mention' : 'Mentioned you',
+        preview: entry.text,
+        time: entry.time || '',
+        messageId: entry.message_id,
+        threadRootId: entry.thread_root_id,
+    }));
+    const threadItems = ownedThreads.map(thread => ({
+        key: `thread-${thread.root_id}`,
+        kind: 'thread',
+        sortId: thread.last_message_id,
+        channel: thread.channel,
+        title: thread.root_message?.sender || 'Thread',
+        subtitle: thread.owner ? `Owned by ${thread.owner}` : 'Open thread',
+        preview: thread.root_message?.text || '',
+        time: thread.root_message?.time || '',
+        rootId: thread.root_id,
+        replyCount: thread.reply_count || 0,
+        status: thread.status || 'open',
+    }));
+    return {
+        all: [...mentionItems, ...threadItems].sort((a, b) => b.sortId - a.sortId),
+        mentions: mentionItems.sort((a, b) => b.sortId - a.sortId),
+        threads: threadItems.sort((a, b) => b.sortId - a.sortId),
+    };
+}
+
+function _updateInboxBadge(data) {
+    const badge = document.getElementById('inbox-badge');
+    if (!badge) return;
+    const total = ((data && data.mentions) || []).length + ((data && data.owned_threads) || []).length;
+    badge.textContent = total > 99 ? '99+' : String(total);
+    badge.classList.toggle('hidden', total === 0);
+}
+
+function _renderInboxEmpty(view, label) {
+    view.innerHTML = `
+        <div class="inbox-header">
+            <div>
+                <div class="inbox-title">Inbox</div>
+                <div class="inbox-subtitle">${label}</div>
+            </div>
+        </div>
+        <div class="pins-empty">No items yet.</div>
+    `;
+}
+
+function _renderInboxCards(view, data) {
+    const grouped = _getInboxItems(data);
+    const items = grouped[_inboxTab] || grouped.all;
+    if (items.length === 0) {
+        _renderInboxEmpty(view, 'Nothing needs attention right now.');
+        return;
+    }
+
+    const tabs = [
+        { key: 'all', label: 'All', count: grouped.all.length },
+        { key: 'mentions', label: 'Mentions', count: grouped.mentions.length },
+        { key: 'threads', label: 'My Threads', count: grouped.threads.length },
+    ];
+
+    view.innerHTML = `
+        <div class="inbox-header">
+            <div>
+                <div class="inbox-title">Inbox</div>
+                <div class="inbox-subtitle">Attention view for @${window.escapeHtml(window.username || 'user')}</div>
+            </div>
+            <div class="inbox-tabs">
+                ${tabs.map(tab => `
+                    <button class="inbox-tab ${tab.key === _inboxTab ? 'active' : ''}" data-inbox-tab="${tab.key}">
+                        <span>${tab.label}</span>
+                        <span class="inbox-tab-badge">${tab.count}</span>
+                    </button>
+                `).join('')}
+            </div>
+        </div>
+        <div class="inbox-cards">
+            ${items.map(item => {
+                const cardClass = item.kind === 'mention' ? 'inbox-card unread' : 'inbox-card thread';
+                const preview = window.escapeHtml(item.preview || '');
+                const subtitle = window.escapeHtml(item.subtitle || '');
+                const title = window.escapeHtml(item.title || '');
+                const channel = window.escapeHtml(item.channel || 'general');
+                const meta = item.kind === 'thread'
+                    ? `${item.replyCount} ${item.replyCount === 1 ? 'reply' : 'replies'}`
+                    : `#${channel}`;
+                return `
+                    <button class="${cardClass}" data-kind="${item.kind}" data-channel="${channel}"
+                        ${item.messageId ? `data-message-id="${item.messageId}"` : ''}
+                        ${item.threadRootId ? `data-thread-root-id="${item.threadRootId}"` : ''}
+                        ${item.rootId ? `data-root-id="${item.rootId}"` : ''}>
+                        <div class="inbox-card-header">
+                            <span class="inbox-card-title">${title}</span>
+                            <span class="inbox-card-meta">${window.escapeHtml(meta)}</span>
+                        </div>
+                        <div class="inbox-card-subtitle">${subtitle}</div>
+                        <div class="inbox-card-preview">${preview}</div>
+                    </button>
+                `;
+            }).join('')}
+        </div>
+    `;
+
+    for (const tab of view.querySelectorAll('[data-inbox-tab]')) {
+        tab.addEventListener('click', () => {
+            _inboxTab = tab.dataset.inboxTab;
+            _renderInboxCards(view, data);
+        });
+    }
+
+    for (const card of view.querySelectorAll('.inbox-card')) {
+        card.addEventListener('click', () => {
+            const channel = card.dataset.channel || 'general';
+            const messageId = card.dataset.messageId ? parseInt(card.dataset.messageId, 10) : null;
+            const rootId = card.dataset.rootId ? parseInt(card.dataset.rootId, 10)
+                : card.dataset.threadRootId ? parseInt(card.dataset.threadRootId, 10) : null;
+            _openInboxItem(channel, messageId, rootId);
+        });
+    }
+}
+
+function _expandThread(rootId) {
+    if (!rootId) return;
+    const group = document.querySelector(`.thread-group[data-thread-root="${rootId}"]`);
+    if (!group) return;
+    const toggle = group.querySelector('.thread-replies');
+    const expanded = group.querySelector('.thread-expanded');
+    if (toggle) toggle.classList.add('expanded');
+    if (expanded) expanded.style.display = 'block';
+}
+
+function _openInboxItem(channel, messageId, rootId) {
+    switchChannel(channel || 'general');
+    requestAnimationFrame(() => {
+        _expandThread(rootId);
+        const targetId = messageId || rootId;
+        if (targetId) scrollToMessage(targetId);
+    });
+}
+
+async function refreshInboxView(options = {}) {
+    const renderIfOpen = options.renderIfOpen !== false;
+    const view = _ensureInboxView();
+    try {
+        const resp = await fetch(`/api/inbox?actor=${encodeURIComponent(window.username || 'user')}`, {
+            headers: { 'X-Session-Token': window.SESSION_TOKEN },
+        });
+        if (!resp.ok) throw new Error(`Inbox request failed: ${resp.status}`);
+        _inboxData = await resp.json();
+        _updateInboxBadge(_inboxData);
+        if (_inboxActive && renderIfOpen) {
+            _showInboxView();
+            _renderInboxCards(view, _inboxData);
+        }
+    } catch (err) {
+        console.error('Failed to refresh inbox view:', err);
+        if (_inboxActive && renderIfOpen) {
+            _showInboxView();
+            _renderInboxEmpty(view, 'Inbox failed to load.');
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +326,10 @@ function renderChannelTabs() {
 // ---------------------------------------------------------------------------
 
 function switchChannel(name) {
-    if (name === window.activeChannel) return;
+    const wasInboxActive = _inboxActive;
+    if (name === window.activeChannel && !wasInboxActive) return;
+    _setInboxActive(false);
+    // Clear inbox active state
     // Save top-visible message ID for current channel
     const topId = _getTopVisibleMsgId();
     if (topId) _channelScrollMsg[window.activeChannel] = topId;
@@ -129,13 +348,116 @@ function switchChannel(name) {
     window.scrollToBottom();
 }
 
+async function switchToInbox() {
+    _setInboxActive(true);
+    document.querySelectorAll('.channel-tab').forEach(t => t.classList.remove('active'));
+    _showInboxView();
+    const view = _ensureInboxView();
+    _renderInboxEmpty(view, 'Loading inbox...');
+    await refreshInboxView();
+}
+
 function filterMessagesByChannel() {
+    if (_inboxActive) {
+        _showInboxView();
+        return;
+    }
+    _showTimelineView();
     const container = document.getElementById('messages');
     if (!container) return;
 
     for (const el of container.children) {
         const ch = el.dataset.channel || 'general';
         el.style.display = ch === window.activeChannel ? '' : 'none';
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Thread grouping — groups reply chains under root messages
+// ---------------------------------------------------------------------------
+
+function groupThreadsInTimeline() {
+    const container = document.getElementById('messages');
+    if (!container) return;
+
+    // Build reply map: rootId -> [replyElements]
+    const replyMap = new Map();
+    const rootElements = new Map();
+
+    for (const el of Array.from(container.children)) {
+        if (!el.dataset || !el.dataset.id) continue;
+        const replyTo = el.dataset.replyTo;
+        if (replyTo) {
+            if (!replyMap.has(replyTo)) replyMap.set(replyTo, []);
+            replyMap.get(replyTo).push(el);
+        }
+        rootElements.set(el.dataset.id, el);
+    }
+
+    // For each root that has replies, wrap in a thread group
+    for (const [rootId, replies] of replyMap) {
+        const rootEl = rootElements.get(rootId);
+        if (!rootEl || rootEl.closest('.thread-group')) continue;
+
+        // Create thread group container
+        const group = document.createElement('div');
+        group.className = 'thread-group';
+        group.dataset.threadRoot = rootId;
+
+        // Mark root
+        rootEl.classList.add('thread-root');
+
+        // Insert group before root in DOM
+        rootEl.parentNode.insertBefore(group, rootEl);
+        group.appendChild(rootEl);
+
+        // Add reply count toggle (uses Kimi's .thread-replies style)
+        const toggleBar = document.createElement('div');
+        toggleBar.className = 'thread-replies';
+        toggleBar.innerHTML = `<span class="chevron">&#x25BC;</span> ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`;
+
+        // Create expanded container (hidden by default)
+        const expandedDiv = document.createElement('div');
+        expandedDiv.className = 'thread-expanded';
+        expandedDiv.style.display = 'none';
+
+        toggleBar.onclick = () => {
+            const isExpanded = expandedDiv.style.display !== 'none';
+            expandedDiv.style.display = isExpanded ? 'none' : 'block';
+            toggleBar.classList.toggle('expanded', !isExpanded);
+        };
+        group.appendChild(toggleBar);
+
+        // Move replies into the expanded container
+        for (const reply of replies) {
+            reply.classList.add('thread-reply');
+            expandedDiv.appendChild(reply);
+        }
+        group.appendChild(expandedDiv);
+    }
+}
+
+// Re-run thread grouping after message filtering
+const _origFilter = filterMessagesByChannel;
+filterMessagesByChannel = function() {
+    _origFilter();
+    if (_inboxActive) return;
+    // Ungroup first to avoid nesting issues on re-filter
+    ungroupThreads();
+    groupThreadsInTimeline();
+};
+
+function ungroupThreads() {
+    const container = document.getElementById('messages');
+    if (!container) return;
+    for (const group of Array.from(container.querySelectorAll('.thread-group'))) {
+        // Move children back to the main container
+        while (group.firstChild) {
+            const child = group.firstChild;
+            child.classList.remove('thread-root', 'thread-reply');
+            group.parentNode.insertBefore(child, group);
+        }
+        group.remove();
     }
 }
 
@@ -336,6 +658,7 @@ function deleteChannel(name) {
 function _channelsInit() {
     // Nothing to do yet -- channel rendering is driven by chat.js calling
     // renderChannelTabs() and filterMessagesByChannel() at the right times.
+    _ensureInboxView();
 }
 
 // ---------------------------------------------------------------------------
@@ -348,4 +671,5 @@ window.filterMessagesByChannel = filterMessagesByChannel;
 window.renderChannelTabs = renderChannelTabs;
 window.deleteChannel = deleteChannel;
 window.showChannelRenameDialog = showChannelRenameDialog;
+window.refreshInboxView = refreshInboxView;
 window.Channels = { init: _channelsInit };
