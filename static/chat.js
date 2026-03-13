@@ -371,6 +371,7 @@ function connectWebSocket() {
                 playNotificationSound(event.data.sender);
             }
             appendMessage(event.data);
+            if (window.refreshInboxView) window.refreshInboxView({ renderIfOpen: true });
         } else if (event.type === 'agent_renamed') {
             // Migrate active mentions before the agents config rebuild
             if (activeMentions.has(event.old_name)) {
@@ -452,6 +453,7 @@ function connectWebSocket() {
                 if (loader) loader.classList.add('hidden');
                 filterMessagesByChannel();
                 renderChannelTabs();
+                if (window.refreshInboxView) window.refreshInboxView({ renderIfOpen: false });
                 // Ensure refresh/reconnect lands on the latest visible message.
                 requestAnimationFrame(() => {
                     autoScroll = true;
@@ -464,6 +466,7 @@ function connectWebSocket() {
             applySettings(event.data);
         } else if (event.type === 'delete') {
             handleDeleteBroadcast(event.ids);
+            if (window.refreshInboxView) window.refreshInboxView({ renderIfOpen: true });
         } else if (event.type === 'rules' || event.type === 'decisions') {
             rules = event.data || [];
             renderRulesPanel();
@@ -501,6 +504,7 @@ function connectWebSocket() {
                 localStorage.setItem('agentchattr-channel', event.new_name);
                 Store.set('activeChannel', event.new_name);
             }
+            if (window.refreshInboxView) window.refreshInboxView({ renderIfOpen: true });
         } else if (event.type === 'edit') {
             // A message was edited/demoted — re-render it in place
             const updatedMsg = event.message;
@@ -523,6 +527,7 @@ function connectWebSocket() {
                     }
                 }
             }
+            if (window.refreshInboxView) window.refreshInboxView({ renderIfOpen: true });
         } else if (event.type === 'clear') {
             const _clearDbgList = document.getElementById('jobs-list');
             const _clearDbgBefore = _clearDbgList ? _clearDbgList.children.length : -1;
@@ -551,6 +556,7 @@ function connectWebSocket() {
                 const _clearDbgAfter = _clearDbgList ? _clearDbgList.children.length : -1;
                 console.log('CLEAR_DEBUG after clear (next frame), jobs-panel-children=' + _clearDbgAfter);
             });
+            if (window.refreshInboxView) window.refreshInboxView({ renderIfOpen: true });
         }
     };
 
@@ -630,6 +636,7 @@ function appendMessage(msg) {
     const el = document.createElement('div');
     el.className = 'message';
     el.dataset.id = msg.id;
+    if (msg.reply_to != null) el.dataset.replyTo = msg.reply_to;
     const msgChannel = msg.channel || 'general';
     el.dataset.channel = msgChannel;
 
@@ -1388,6 +1395,7 @@ function applySettings(data) {
         username = data.username;
         document.getElementById('sender-label').textContent = username;
         document.getElementById('setting-username').value = username;
+        if (window.refreshInboxView) window.refreshInboxView({ renderIfOpen: true });
     }
     if (data.font) {
         document.body.classList.remove('font-mono', 'font-serif', 'font-sans');

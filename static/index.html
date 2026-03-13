@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>agentchattr</title>
-    <link rel="stylesheet" href="/static/style.css?v=193">
-    <link rel="stylesheet" href="/static/sessions.css?v=193">
-    <link rel="stylesheet" href="/static/jobs.css?v=193">
+    <link rel="stylesheet" href="/static/style.css?v=195">
+    <link rel="stylesheet" href="/static/sessions.css?v=195">
+    <link rel="stylesheet" href="/static/jobs.css?v=195">
     <link rel="icon" href="/static/favicon.ico">
 </head>
 <body>
@@ -109,15 +109,24 @@
             <div id="pins-list"></div>
         </div>
 
-        <div id="channel-bar">
-            <div id="channel-tabs"></div>
-            <button id="channel-add-btn" class="channel-add" onclick="showChannelCreateDialog()" title="Add channel">+</button>
-            <div class="channel-bar-right">
-                <a id="update-pill" class="update-pill hidden" href="" target="_blank" rel="noopener"></a>
-                <a class="channel-support" href="https://buymeacoffee.com/bcurts" target="_blank" rel="noopener">&#9829; Support development</a>
+        <div id="app-body">
+        <aside id="sidebar">
+            <div class="sidebar-inbox" id="sidebar-inbox" onclick="switchToInbox()">
+                <span class="sidebar-inbox-icon">&#x1F4EC;</span>
+                <span class="sidebar-inbox-label">Inbox</span>
+                <span class="sidebar-inbox-badge hidden" id="inbox-badge">0</span>
             </div>
-        </div>
+            <div class="sidebar-section-header">
+                <span>Channels</span>
+                <button class="sidebar-add-btn" onclick="showChannelCreateDialog()" title="Add channel">+</button>
+            </div>
+            <div id="channel-tabs" class="sidebar-channels"></div>
+            <div class="sidebar-footer">
+                <a id="update-pill" class="update-pill hidden" href="" target="_blank" rel="noopener"></a>
+            </div>
+        </aside>
 
+        <div id="main-content">
         <div id="session-bar" class="hidden">
             <div class="session-info">
                 <span class="session-template"></span>
@@ -223,6 +232,8 @@
                 Enter to send &middot; Shift+Enter for newline &middot; Paste/drop images &middot; Mic for voice &middot; Type / or @ for autocomplete
             </div>
         </footer>
+        </div><!-- end #main-content -->
+        </div><!-- end #app-body -->
     </div>
 
     <div id="dropzone" class="hidden">
@@ -230,12 +241,12 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="/static/core.js?v=193"></script>
-    <script src="/static/store.js?v=193"></script>
-    <script src="/static/sessions.js?v=193"></script>
-    <script src="/static/jobs.js?v=193"></script>
-    <script src="/static/channels.js?v=193"></script>
-    <script src="/static/rules-panel.js?v=193"></script>
-    <script src="/static/chat.js?v=193"></script>
+    <script src="/static/core.js?v=195"></script>
+    <script src="/static/store.js?v=195"></script>
+    <script src="/static/sessions.js?v=195"></script>
+    <script src="/static/jobs.js?v=195"></script>
+    <script src="/static/channels.js?v=195"></script>
+    <script src="/static/rules-panel.js?v=195"></script>
+    <script src="/static/chat.js?v=195"></script>
 </body>
 </html>
