@@ -97,6 +97,13 @@ class MessageStore:
                 msgs = [m for m in msgs if m.get("channel", "general") == channel]
             return list(msgs[-count:])
 
+    def get_all(self, channel: str | None = None) -> list[dict]:
+        with self._lock:
+            msgs = self._messages
+            if channel:
+                msgs = [m for m in msgs if m.get("channel", "general") == channel]
+            return list(msgs)
+
     def get_since(self, since_id: int = 0, channel: str | None = None) -> list[dict]:
         with self._lock:
             msgs = [m for m in self._messages if m["id"] > since_id]

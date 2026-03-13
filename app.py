@@ -23,6 +23,13 @@ from agents import AgentTrigger
 from registry import RuntimeRegistry
 from session_store import SessionStore, validate_session_template
 from session_engine import SessionEngine
+from thread_store import (
+    ThreadStore,
+    build_inbox_view,
+    build_thread_index,
+    rebuild_thread_state,
+    sync_thread_state_for_message,
+)
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +45,7 @@ agents: AgentTrigger | None = None
 registry: RuntimeRegistry | None = None
 session_store: SessionStore | None = None
 session_engine: SessionEngine | None = None
+thread_state: ThreadStore | None = None
 config: dict = {}
 ws_clients: set[WebSocket] = set()
 
@@ -227,7 +235,7 @@ def _install_security_middleware(token: str, cfg: dict):
 
 
 def configure(cfg: dict, session_token: str = ""):
-    global store, rules, summaries, jobs, router, agents, registry, session_store, session_engine, config
+    global store, rules, summaries, jobs, router, agents, registry, session_store, session_engine, thread_state, config
     config = cfg
     # --- Security: store the session token and install middleware ---
     _install_security_middleware(session_token, cfg)
@@ -242,9 +250,11 @@ def configure(cfg: dict, session_token: str = ""):
         log_path = legacy_log_path
 
     store = MessageStore(str(log_path))
+    thread_state = ThreadStore(str(Path(data_dir) / "thread_state.json"))
     # Initialize store upload dir from config
     raw_upload_dir = cfg.get("images", {}).get("upload_dir", "./uploads")
     store.upload_dir = Path(raw_upload_dir)
+    rebuild_thread_state(store.get_all(), thread_state)
     
     # Rules store — migrates from legacy decisions.json automatically
     rules_path = Path(data_dir) / "rules.json"
@@ -294,6 +304,8 @@ def configure(cfg: dict, session_token: str = ""):
     # Bridge: when ANY message is added to store (including via MCP),
     # broadcast to all WebSocket clients
     store.on_message(_on_store_message)
+    store.on_message(_on_thread_state_message)
+    store.on_delete(_on_thread_state_delete)
 
     _load_settings()
     _load_hats()
@@ -472,6 +484,18 @@ def _on_store_message(msg: dict):
     except RuntimeError:
         pass  # No running loop — we're in a different thread (MCP)
     asyncio.run_coroutine_threadsafe(_handle_new_message(msg), _event_loop)
+
+
+def _on_thread_state_message(msg: dict):
+    if store is None or thread_state is None:
+        return
+    sync_thread_state_for_message(store, thread_state, msg)
+
+
+def _on_thread_state_delete(_msg_ids: list[int]):
+    if store is None or thread_state is None:
+        return
+    rebuild_thread_state(store.get_all(), thread_state)
 
 
 def _on_rule_change(action: str, rule: dict):
@@ -1362,6 +1386,44 @@ async def get_messages(since_id: int = 0, limit: int = 50, channel: str = ""):
     if since_id:
         return store.get_since(since_id, channel=ch)
     return store.get_recent(limit, channel=ch)
+
+
+@app.get("/api/threads")
+async def get_threads(channel: str = "", owner: str = "", status: str = ""):
+    ch = channel if channel else None
+    own = owner.strip() or None
+    st = status.strip() or None
+    return build_thread_index(store.get_all(), thread_state, channel=ch, owner=own, status=st)
+
+
+@app.patch("/api/threads/{root_id}")
+async def patch_thread(root_id: int, request: Request):
+    body = await request.json()
+    owner = body.get("owner")
+    status = body.get("status")
+    if owner is None and status is None:
+        return JSONResponse({"error": "owner or status is required"}, status_code=400)
+
+    root_message = store.get_by_id(root_id)
+    if not root_message:
+        return JSONResponse({"error": "thread root not found"}, status_code=404)
+
+    existing = thread_state.get(root_id)
+    updated = thread_state.update_thread(
+        root_id,
+        owner=owner if owner is not None else (existing or {}).get("owner", ""),
+        status=status if status is not None else (existing or {}).get("status", "open"),
+        channel=root_message.get("channel", "general"),
+        last_message_id=(existing or {}).get("last_message_id", root_id),
+    )
+    return JSONResponse(updated)
+
+
+@app.get("/api/inbox")
+async def get_inbox(actor: str = "", channel: str = ""):
+    actor_name = actor.strip() or room_settings.get("username", "user")
+    ch = channel if channel else None
+    return build_inbox_view(store.get_all(), thread_state, actor=actor_name, channel=ch)
 
 
 @app.post("/api/send")
