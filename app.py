@@ -1420,10 +1420,40 @@ async def patch_thread(root_id: int, request: Request):
 
 
 @app.get("/api/inbox")
-async def get_inbox(actor: str = "", channel: str = ""):
+async def get_inbox(actor: str = "", filter: str = "", include_done: bool = False, channel: str = ""):
+    if store is None or thread_state is None:
+        return JSONResponse({"error": "inbox backend unavailable"}, status_code=503)
     actor_name = actor.strip() or room_settings.get("username", "user")
     ch = channel if channel else None
-    return build_inbox_view(store.get_all(), thread_state, actor=actor_name, channel=ch)
+    return build_inbox_view(
+        store.get_all(),
+        thread_state,
+        actor=actor_name,
+        channel=ch,
+        filter_kind=filter.strip() or None,
+        include_done=include_done,
+    )
+
+
+def _update_inbox_item_state(item_id: str, actor: str, *, unread: bool | None = None, done: bool | None = None):
+    if thread_state is None:
+        return JSONResponse({"error": "inbox backend unavailable"}, status_code=503)
+    actor_name = actor.strip() or room_settings.get("username", "user")
+    try:
+        updated = thread_state.update_inbox_item_state(actor_name, item_id, unread=unread, done=done)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse(updated)
+
+
+@app.post("/api/inbox/{item_id}/read")
+async def mark_inbox_item_read(item_id: str, actor: str = ""):
+    return _update_inbox_item_state(item_id, actor, unread=False)
+
+
+@app.post("/api/inbox/{item_id}/done")
+async def mark_inbox_item_done(item_id: str, actor: str = ""):
+    return _update_inbox_item_state(item_id, actor, unread=False, done=True)
 
 
 @app.post("/api/send")
