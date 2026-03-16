@@ -32,7 +32,7 @@ if %errorlevel% neq 0 (
     goto :wait_server
 )
 
-python wrapper.py claude
+python wrapper.py claude --strict-mcp-config
 if %errorlevel% neq 0 (
     echo.
     echo   Agent exited unexpectedly. Check the output above.

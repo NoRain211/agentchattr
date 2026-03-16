@@ -22,16 +22,16 @@ rules = None
 summaries = None
 jobs = None  # set by run.py — JobStore instance
 room_settings = None  # set by run.py — dict with "channels" list etc.
-registry = None       # set by run.py — RuntimeRegistry instance
-config = None         # set by run.py — full config.toml dict
-router = None         # set by run.py — Router instance
-agents = None         # set by run.py — AgentManager instance
+registry = None  # set by run.py — RuntimeRegistry instance
+config = None  # set by run.py — full config.toml dict
+router = None  # set by run.py — Router instance
+agents = None  # set by run.py — AgentManager instance
 _presence: dict[str, float] = {}
-_activity: dict[str, bool] = {}   # True = screen changed on last poll
+_activity: dict[str, bool] = {}  # True = screen changed on last poll
 _activity_ts: dict[str, float] = {}  # timestamp of last active=True heartbeat
 ACTIVITY_TIMEOUT = 8  # auto-expire activity after 8s without a fresh active=True
-_presence_lock = threading.Lock()   # guards both _presence and _activity
-_renamed_from: set[str] = set()    # old names from renames — suppress leave messages
+_presence_lock = threading.Lock()  # guards both _presence and _activity
+_renamed_from: set[str] = set()  # old names from renames — suppress leave messages
 _cursors: dict[str, dict[str, int]] = {}  # agent_name → {channel_name → last_id}
 _cursors_lock = threading.Lock()
 _empty_read_count: dict[str, int] = {}  # sender → consecutive empty reads
@@ -52,12 +52,12 @@ _MCP_INSTRUCTIONS = (
     "Always use your own name as the sender — never impersonate other agents or humans.\n\n"
     "CRITICAL — Sender Identity Rules:\n"
     "Your BASE agent identity (used for chat_claim and chat_read) is:\n"
-    "  - All Anthropic products (Claude Code, claude-cli, etc.) → base: \"claude\"\n"
-    "  - All OpenAI products (Codex CLI, codex, chatgpt-cli, etc.) → base: \"codex\"\n"
-    "  - All Google products (Gemini CLI, gemini-cli, aistudio, etc.) → base: \"gemini\"\n"
-    "  - Humans use their own name (e.g. \"user\")\n"
-    "Do NOT use your CLI tool name (e.g. \"gemini-cli\", \"claude-code\") — use the base name above.\n"
-    "IMPORTANT: When multiple instances run, the server renames slot 1 (e.g. \"claude\" → \"claude-1\"). "
+    '  - All Anthropic products (Claude Code, claude-cli, etc.) → base: "claude"\n'
+    '  - All OpenAI products (Codex CLI, codex, chatgpt-cli, etc.) → base: "codex"\n'
+    '  - All Google products (Gemini CLI, gemini-cli, aistudio, etc.) → base: "gemini"\n'
+    '  - Humans use their own name (e.g. "user")\n'
+    'Do NOT use your CLI tool name (e.g. "gemini-cli", "claude-code") — use the base name above.\n'
+    'IMPORTANT: When multiple instances run, the server renames slot 1 (e.g. "claude" → "claude-1"). '
     "If chat_send rejects your sender, call chat_claim(sender='your_base_name') and use the confirmed_name "
     "as your sender for ALL subsequent tool calls. The confirmed_name overrides the base name.\n\n"
     "CRITICAL — Identity:\n"
@@ -161,7 +161,10 @@ def _resolve_tool_identity(
             _touch_presence(resolved)
         return resolved, None
     if token:
-        return "", "Error: stale or unknown authenticated agent session. Re-register and retry."
+        return (
+            "",
+            "Error: stale or unknown authenticated agent session. Re-register and retry.",
+        )
 
     if not provided:
         if required:
@@ -194,7 +197,9 @@ def chat_send(
     Optionally reply to a message by providing reply_to (message ID).
     Optionally specify a channel (default: 'general').
     Optionally specify a job_id to post into a job conversation instead of the main timeline."""
-    sender, err = _resolve_tool_identity(sender, ctx, field_name="sender", required=True)
+    sender, err = _resolve_tool_identity(
+        sender, ctx, field_name="sender", required=True
+    )
     if err:
         return err
     # Block pending instances (identity not yet confirmed)
@@ -202,13 +207,23 @@ def chat_send(
         return "Error: identity not confirmed. Call chat_claim(sender=your_base_name) to get your identity."
     # Block base family names when multi-instance is active
     # (but allow if sender is a registered+active instance — e.g. slot-1 'claude' that already claimed)
-    if registry and sender in registry.get_bases() and registry.family_instance_count(sender) >= 2:
+    if (
+        registry
+        and sender in registry.get_bases()
+        and registry.family_instance_count(sender) >= 2
+    ):
         inst = registry.get_instance(sender)
         if not inst or inst.get("state") != "active":
-            return (f"Error: multiple {sender} instances are registered. "
-                    f"Call chat_claim(sender='{sender}') to get your unique identity, then use the confirmed_name as sender.")
+            return (
+                f"Error: multiple {sender} instances are registered. "
+                f"Call chat_claim(sender='{sender}') to get your unique identity, then use the confirmed_name as sender."
+            )
     # Block unregistered agent names (stale identity from resumed session)
-    if registry and registry.is_agent_family(sender) and not registry.is_registered(sender):
+    if (
+        registry
+        and registry.is_agent_family(sender)
+        and not registry.is_registered(sender)
+    ):
         return f"Error: sender '{sender}' is not registered. Call chat_claim(sender=your_base_name) to get your identity."
     if not message.strip() and not image_path:
         return "Empty message, not sent."
@@ -220,15 +235,24 @@ def chat_send(
         msg_type = "chat"
         if text.lower().startswith("[suggestion]"):
             msg_type = "suggestion"
-            text = text[len("[suggestion]"):].strip()
+            text = text[len("[suggestion]") :].strip()
         # Handle image attachment for job messages
         job_attachments = None
         if image_path:
             import shutil, uuid
+
             src = Path(image_path)
             if not src.exists():
                 return f"Image not found: {image_path}"
-            if src.suffix.lower() not in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'):
+            if src.suffix.lower() not in (
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".gif",
+                ".webp",
+                ".bmp",
+                ".svg",
+            ):
                 return f"Unsupported image type: {src.suffix}"
             raw_dir = "./uploads"
             if config and "images" in config:
@@ -238,8 +262,9 @@ def chat_send(
             filename = f"{uuid.uuid4().hex[:8]}{src.suffix}"
             shutil.copy2(str(src), str(upload_dir / filename))
             job_attachments = [{"name": src.name, "url": f"/uploads/{filename}"}]
-        msg = jobs.add_message(job_id, sender, text, msg_type=msg_type,
-                               attachments=job_attachments)
+        msg = jobs.add_message(
+            job_id, sender, text, msg_type=msg_type, attachments=job_attachments
+        )
         if msg is None:
             return f"Error: job #{job_id} not found."
         with _presence_lock:
@@ -265,29 +290,40 @@ def chat_send(
                         if inst and inst.get("state") == "pending":
                             continue
                     if agents.is_available(target):
-                        agents.trigger_sync(target, message=chat_msg,
-                                            channel=job_channel, job_id=job_id)
+                        agents.trigger_sync(
+                            target, message=chat_msg, channel=job_channel, job_id=job_id
+                        )
 
         return f"Sent to job #{job_id} (msg_id={msg['id']})" + (
-            " [suggestion]" if msg_type == "suggestion" else "")
+            " [suggestion]" if msg_type == "suggestion" else ""
+        )
 
     attachments = []
     if image_path:
         import shutil
         import uuid
         from pathlib import Path
+
         src = Path(image_path)
         if not src.exists():
             return f"Image not found: {image_path}"
-        if src.suffix.lower() not in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'):
+        if src.suffix.lower() not in (
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".webp",
+            ".bmp",
+            ".svg",
+        ):
             return f"Unsupported image type: {src.suffix}"
-        
+
         # Get upload dir from config (fall back to ./uploads)
         raw_dir = "./uploads"
         if config and "images" in config:
             raw_dir = config["images"].get("upload_dir", raw_dir)
         upload_dir = Path(raw_dir)
-        
+
         upload_dir.mkdir(parents=True, exist_ok=True)
         filename = f"{uuid.uuid4().hex[:8]}{src.suffix}"
         shutil.copy2(str(src), str(upload_dir / filename))
@@ -297,12 +333,254 @@ def chat_send(
     if reply_id is not None and store.get_by_id(reply_id) is None:
         return f"Message #{reply_to} not found."
 
-    msg = store.add(sender, message.strip(), attachments=attachments,
-                    reply_to=reply_id, channel=channel)
+    msg = store.add(
+        sender,
+        message.strip(),
+        attachments=attachments,
+        reply_to=reply_id,
+        channel=channel,
+    )
     _update_cursor(sender, [msg], channel)
     with _presence_lock:
         _presence[sender] = time.time()
     return f"Sent (id={msg['id']})"
+
+
+def chat_thread_list(
+    channel: str = "",
+    status: str = "",
+    ctx: Context | None = None,
+) -> str:
+    """List threads in a channel. Returns JSON array of thread summaries.
+
+    Args:
+        channel: Filter by channel name (default: all channels).
+        status: Filter by status - 'open', 'resolved', or omit for all.
+    """
+    import app
+    from thread_store import build_thread_index, ThreadStore
+
+    thread_store: ThreadStore = getattr(app, "thread_state", None)
+    if not thread_store:
+        return "Error: thread store not available."
+
+    message_store = getattr(app, "store", None)
+    if not message_store:
+        return "Error: message store not available."
+
+    ch = channel.strip() if channel.strip() else None
+    status_filter = status.strip() if status.strip() else None
+
+    messages = message_store.get_all()
+    threads = build_thread_index(
+        messages, thread_store, channel=ch, status=status_filter
+    )
+
+    out = []
+    for thread in threads:
+        out.append(
+            {
+                "root_id": thread["root_id"],
+                "channel": thread["channel"],
+                "owner": thread.get("owner", ""),
+                "status": thread.get("status", "open"),
+                "message_count": thread.get("message_count", 0),
+                "reply_count": thread.get("reply_count", 0),
+                "participants": thread.get("participants", []),
+                "updated_at": thread.get("updated_at", 0),
+                "root_message": thread.get("root_message", {}),
+            }
+        )
+    return json.dumps(out, ensure_ascii=False) if out else "No threads found."
+
+
+def chat_thread_read(
+    thread_id: int,
+    limit: int = 50,
+    ctx: Context | None = None,
+) -> str:
+    """Read all messages in a thread by root message ID.
+
+    Args:
+        thread_id: The root message ID of the thread.
+        limit: Maximum messages to return (default 50).
+    """
+    import app
+    from thread_store import resolve_thread_root_id, ThreadStore
+
+    thread_store: ThreadStore = getattr(app, "thread_state", None)
+    if not thread_store:
+        return "Error: thread store not available."
+
+    message_store = getattr(app, "store", None)
+    if not message_store:
+        return "Error: message store not available."
+
+    root_id = int(thread_id)
+    messages = message_store.get_all()
+
+    message_index = {int(m["id"]): m for m in messages}
+
+    thread_messages = []
+    for msg in messages:
+        msg_root = resolve_thread_root_id(msg, message_index)
+        if msg_root == root_id:
+            thread_messages.append(msg)
+
+    thread_messages.sort(key=lambda m: m["id"])
+    thread_messages = thread_messages[-limit:]
+
+    thread_state = thread_store.get(root_id)
+
+    out = {
+        "root_id": root_id,
+        "status": thread_state.get("status", "open") if thread_state else "open",
+        "owner": thread_state.get("owner", "") if thread_state else "",
+        "channel": thread_state.get("channel", "general")
+        if thread_state
+        else "general",
+        "messages": [_compact_thread_message(m) for m in thread_messages],
+    }
+    return json.dumps(out, ensure_ascii=False)
+
+
+def _compact_thread_message(message: dict) -> dict:
+    """Compact message for thread output."""
+    entry = {
+        "id": message["id"],
+        "sender": message.get("sender", ""),
+        "text": message.get("text", ""),
+        "type": message.get("type", "chat"),
+        "time": message.get("time", ""),
+        "channel": message.get("channel", "general"),
+    }
+    if message.get("reply_to") is not None:
+        entry["reply_to"] = message["reply_to"]
+    if message.get("attachments"):
+        entry["attachments"] = _resolve_attachments(message["attachments"])
+    return entry
+
+
+def chat_thread_create(
+    sender: str,
+    channel: str,
+    title: str,
+    message: str = "",
+    ctx: Context | None = None,
+) -> str:
+    """Create a new thread with an initial message.
+
+    Args:
+        sender: Your name (used as message sender).
+        channel: Channel to create thread in.
+        title: Thread title (for identification).
+        message: First message text (optional - can just create thread).
+    """
+    sender, err = _resolve_tool_identity(
+        sender, ctx, field_name="sender", required=True
+    )
+    if err:
+        return err
+
+    import app
+    from thread_store import ThreadStore
+
+    thread_store: ThreadStore = getattr(app, "thread_state", None)
+    if not thread_store:
+        return "Error: thread store not available."
+
+    message_store = getattr(app, "store", None)
+    if not message_store:
+        return "Error: message store not available."
+
+    ch = channel.strip() if channel.strip() else "general"
+    title = title.strip()
+
+    msg = message_store.add(
+        sender, message.strip() if message.strip() else f"Thread: {title}", channel=ch
+    )
+
+    thread_store.update_thread(
+        msg["id"],
+        owner=sender,
+        status="open",
+        channel=ch,
+        last_message_id=msg["id"],
+    )
+
+    # Broadcast with owner set (the auto-sync fires before owner is set)
+    updated = thread_store.get(msg["id"])
+    if updated:
+        import asyncio
+        updated["root_id"] = msg["id"]
+        if app._event_loop:
+            asyncio.run_coroutine_threadsafe(
+                app.broadcast_thread_update(updated), app._event_loop
+            )
+
+    return json.dumps(
+        {
+            "root_id": msg["id"],
+            "channel": ch,
+            "title": title,
+            "message_id": msg["id"],
+        },
+        ensure_ascii=False,
+    )
+
+
+def chat_thread_update(
+    thread_id: int,
+    owner: str = "",
+    status: str = "",
+    ctx: Context | None = None,
+) -> str:
+    """Update a thread's owner or status.
+
+    Args:
+        thread_id: The root message ID of the thread.
+        owner: New thread owner (agent name). Pass empty to leave unchanged.
+        status: New status - 'open', 'resolved', or 'done'. Pass empty to leave unchanged.
+    """
+    import asyncio
+    import app
+    from thread_store import ThreadStore
+
+    thread_store: ThreadStore = getattr(app, "thread_state", None)
+    if not thread_store:
+        return "Error: thread store not available."
+
+    message_store = getattr(app, "store", None)
+    if not message_store:
+        return "Error: message store not available."
+
+    root_id = int(thread_id)
+    root_message = message_store.get_by_id(root_id)
+    if not root_message:
+        return f"Error: thread root message {root_id} not found."
+
+    existing = thread_store.get(root_id) or {}
+    new_owner = owner.strip() if owner.strip() else existing.get("owner", "")
+    new_status = status.strip() if status.strip() else existing.get("status", "open")
+
+    if new_status not in ("open", "resolved", "done"):
+        return f"Error: invalid status '{new_status}'. Use 'open', 'resolved', or 'done'."
+
+    updated = thread_store.update_thread(
+        root_id,
+        owner=new_owner,
+        status=new_status,
+        channel=root_message.get("channel", "general"),
+        last_message_id=existing.get("last_message_id", root_id),
+    )
+    updated["root_id"] = root_id
+
+    if app._event_loop:
+        asyncio.run_coroutine_threadsafe(
+            app.broadcast_thread_update(updated), app._event_loop
+        )
+
+    return json.dumps(updated, ensure_ascii=False)
 
 
 def chat_propose_job(
@@ -321,7 +599,9 @@ def chat_propose_job(
         body: Detailed description of the work (max 1000 chars)
         channel: Channel to post the proposal in
     """
-    sender, err = _resolve_tool_identity(sender, ctx, field_name="sender", required=True)
+    sender, err = _resolve_tool_identity(
+        sender, ctx, field_name="sender", required=True
+    )
     if err:
         return err
     if not title.strip():
@@ -330,7 +610,8 @@ def chat_propose_job(
     body = (body or "").strip()[:1000]
 
     msg = store.add(
-        sender, f"Job proposal: {title}",
+        sender,
+        f"Job proposal: {title}",
         msg_type="job_proposal",
         channel=channel,
         metadata={"title": title, "body": body, "status": "pending"},
@@ -516,6 +797,7 @@ def chat_read(
     limit: int = 20,
     channel: str = "",
     job_id: int = 0,
+    thread_id: int = 0,
     ctx: Context | None = None,
 ) -> str:
     """Read chat messages. Returns JSON array with: id, sender, text, type, time, channel.
@@ -526,8 +808,11 @@ def chat_read(
     - Pass since_id to override and read from a specific point.
     - Omit sender to always get the last `limit` messages (no cursor).
     - Pass channel to filter by channel name (default: all channels).
-    - Pass job_id to read messages from a specific job."""
-    sender, err = _resolve_tool_identity(sender, ctx, field_name="sender", required=False)
+    - Pass job_id to read messages from a specific job.
+    - Pass thread_id to read only messages belonging to a specific thread (root message + replies)."""
+    sender, err = _resolve_tool_identity(
+        sender, ctx, field_name="sender", required=False
+    )
     if err:
         return err
 
@@ -538,8 +823,13 @@ def chat_read(
             return f"Error: job #{job_id} not found."
         out = []
         for m in msgs:
-            entry = {"id": m["id"], "sender": m["sender"], "text": m["text"],
-                     "time": m.get("time", ""), "job_id": job_id}
+            entry = {
+                "id": m["id"],
+                "sender": m["sender"],
+                "text": m["text"],
+                "time": m.get("time", ""),
+                "job_id": job_id,
+            }
             if m.get("attachments"):
                 entry["attachments"] = _resolve_attachments(m["attachments"])
             if m.get("type"):
@@ -547,7 +837,32 @@ def chat_read(
             if m.get("resolved"):
                 entry["resolved"] = m["resolved"]
             out.append(entry)
-        return json.dumps(out, ensure_ascii=False) if out else "No messages in this job yet."
+        return (
+            json.dumps(out, ensure_ascii=False)
+            if out
+            else "No messages in this job yet."
+        )
+
+    # Thread-scoped read: return only messages in a specific thread
+    if thread_id and store and thread_state:
+        from thread_store import resolve_thread_root_id
+
+        all_msgs = store.get_all()
+        message_index = {int(m["id"]): m for m in all_msgs}
+        thread_msgs = [
+            m for m in all_msgs if resolve_thread_root_id(m, message_index) == thread_id
+        ]
+        thread_msgs.sort(key=lambda m: m["id"])
+        if not thread_msgs:
+            return f"No messages found for thread {thread_id}."
+        thread_record = thread_state.get(thread_id)
+        header = f"Thread {thread_id}"
+        if thread_record:
+            header += f" | status: {thread_record.get('status', 'open')}"
+            if thread_record.get("owner"):
+                header += f" | owner: {thread_record['owner']}"
+        serialized = _serialize_messages(thread_msgs)
+        return f"{header}\n{serialized}"
 
     ch = channel if channel else None
     if since_id:
@@ -575,11 +890,15 @@ def chat_read(
         if n == 1:
             serialized = "No new messages. Do not poll — wait for your next prompt."
         elif n == 2:
-            serialized = ("No new messages. You have read with no results twice — "
-                          "stop polling and wait for a trigger.")
+            serialized = (
+                "No new messages. You have read with no results twice — "
+                "stop polling and wait for a trigger."
+            )
         else:
-            serialized = ("No new messages. STOP. Repeated empty reads waste tokens. "
-                          "Wait for your next prompt.")
+            serialized = (
+                "No new messages. STOP. Repeated empty reads waste tokens. "
+                "Wait for your next prompt."
+            )
     elif sender:
         _empty_read_count[sender] = 0
 
@@ -606,7 +925,9 @@ def chat_resync(
     to the latest returned message id.
     Pass channel to filter by channel name (default: all channels).
     """
-    sender, err = _resolve_tool_identity(sender, ctx, field_name="sender", required=True)
+    sender, err = _resolve_tool_identity(
+        sender, ctx, field_name="sender", required=True
+    )
     if err:
         return err
     ch = channel if channel else None
@@ -626,11 +947,17 @@ def chat_join(name: str, channel: str = "general", ctx: Context | None = None) -
         return "Error: identity not confirmed. Call chat_claim(sender=your_base_name) to get your identity."
     # Block base family names when multi-instance is active
     # (but allow if name is a registered+active instance — e.g. slot-1 'claude' that already claimed)
-    if registry and name in registry.get_bases() and registry.family_instance_count(name) >= 2:
+    if (
+        registry
+        and name in registry.get_bases()
+        and registry.family_instance_count(name) >= 2
+    ):
         inst = registry.get_instance(name)
         if not inst or inst.get("state") != "active":
-            return (f"Error: multiple {name} instances registered. "
-                    f"Call chat_claim(sender='{name}') to get your unique identity first.")
+            return (
+                f"Error: multiple {name} instances registered. "
+                f"Call chat_claim(sender='{name}') to get your unique identity first."
+            )
     # Block unregistered agent names (stale identity from resumed session)
     if registry and registry.is_agent_family(name) and not registry.is_registered(name):
         return f"Error: '{name}' is not registered. Call chat_claim(sender=your_base_name) to get your identity."
@@ -654,8 +981,7 @@ def _touch_presence(name: str):
 def _get_online() -> list[str]:
     now = time.time()
     with _presence_lock:
-        return [name for name, ts in _presence.items()
-                if now - ts < PRESENCE_TIMEOUT]
+        return [name for name, ts in _presence.items() if now - ts < PRESENCE_TIMEOUT]
 
 
 def is_online(name: str) -> bool:
@@ -673,6 +999,7 @@ def set_active(name: str, active: bool):
 
 def is_active(name: str) -> bool:
     import time as _time
+
     with _presence_lock:
         if not _activity.get(name, False):
             return False
@@ -700,7 +1027,9 @@ def chat_rules(
 
     Pass channel to place the proposal card in the correct chat channel (default: 'general').
     Agents cannot activate, edit, or delete rules — only humans can do that from the web UI."""
-    sender, err = _resolve_tool_identity(sender, ctx, field_name="sender", required=False)
+    sender, err = _resolve_tool_identity(
+        sender, ctx, field_name="sender", required=False
+    )
     if err:
         return err
     action = action.strip().lower()
@@ -725,10 +1054,15 @@ def chat_rules(
         # Add proposal card to chat timeline
         if store:
             store.add(
-                sender, f"Rule proposal: {result['text']}",
+                sender,
+                f"Rule proposal: {result['text']}",
                 msg_type="rule_proposal",
                 channel=channel or "general",
-                metadata={"rule_id": result["id"], "text": result["text"], "status": "pending"},
+                metadata={
+                    "rule_id": result["id"],
+                    "text": result["text"],
+                    "status": "pending",
+                },
             )
         return f"Proposed rule #{result['id']}: '{result['text']}'. Human will review in the Rules panel."
 
@@ -746,21 +1080,29 @@ def chat_decision(
     ctx: Context | None = None,
 ) -> str:
     """Backward-compatible alias for chat_rules. Use chat_rules instead."""
-    return chat_rules(action=action, sender=sender, rule=decision, reason=reason, ctx=ctx)
+    return chat_rules(
+        action=action, sender=sender, rule=decision, reason=reason, ctx=ctx
+    )
 
 
 # --- Server instances ---
 
-def chat_set_hat(sender: str, svg: str, target: str = "", ctx: Context | None = None) -> str:
+
+def chat_set_hat(
+    sender: str, svg: str, target: str = "", ctx: Context | None = None
+) -> str:
     """Set your avatar hat. Pass an SVG string (viewBox "0 0 32 16", max 5KB).
     The hat will appear above your avatar in chat. To remove, users can drag it to the trash.
     Color context for design — chat bg is dark (#0f0f17), avatar colors: claude=#da7756 (coral), codex=#10a37f (green), gemini=#4285f4 (blue).
     Optional: pass target to set a hat on another agent (e.g. target="qwen")."""
-    sender, err = _resolve_tool_identity(sender, ctx, field_name="sender", required=True)
+    sender, err = _resolve_tool_identity(
+        sender, ctx, field_name="sender", required=True
+    )
     if err:
         return err
     hat_owner = target.strip() if target.strip() else sender
     import app
+
     err = app.set_agent_hat(hat_owner, svg)
     if err:
         return f"Error: {err}"
@@ -777,7 +1119,9 @@ def chat_claim(sender: str, name: str = "", ctx: Context | None = None) -> str:
 
     Your sender must be your current registered name (the one assigned at registration).
     The identity breadcrumb in chat_read responses shows your current identity."""
-    sender, err = _resolve_tool_identity(sender, ctx, field_name="sender", required=True)
+    sender, err = _resolve_tool_identity(
+        sender, ctx, field_name="sender", required=True
+    )
     if err:
         return err
     if not registry:
@@ -789,12 +1133,20 @@ def chat_claim(sender: str, name: str = "", ctx: Context | None = None) -> str:
     # Touch presence with the CONFIRMED name (may differ from sender)
     confirmed = result.get("name", sender)
     _touch_presence(confirmed)
-    return json.dumps({"confirmed_name": confirmed, "label": result.get("label", ""), "base": result.get("base", "")})
+    return json.dumps(
+        {
+            "confirmed_name": confirmed,
+            "label": result.get("label", ""),
+            "base": result.get("base", ""),
+        }
+    )
 
 
 def chat_channels() -> str:
     """List all available channels. Returns a JSON array of channel names."""
-    channels = room_settings.get("channels", ["general"]) if room_settings else ["general"]
+    channels = (
+        room_settings.get("channels", ["general"]) if room_settings else ["general"]
+    )
     return json.dumps(channels)
 
 
@@ -813,7 +1165,9 @@ def chat_summary(
 
     Keep summaries factual and concise (under 150 words). Focus on decisions made,
     tasks completed, and open questions."""
-    sender, err = _resolve_tool_identity(sender, ctx, field_name="sender", required=False)
+    sender, err = _resolve_tool_identity(
+        sender, ctx, field_name="sender", required=False
+    )
     if err:
         return err
     action = action.strip().lower()
@@ -822,7 +1176,13 @@ def chat_summary(
     if action == "read":
         entry = summaries.get(channel)
         if not entry:
-            return json.dumps({"channel": channel, "text": None, "message": f"No summary for #{channel} yet — one hasn't been written."})
+            return json.dumps(
+                {
+                    "channel": channel,
+                    "text": None,
+                    "message": f"No summary for #{channel} yet — one hasn't been written.",
+                }
+            )
         return json.dumps(entry, ensure_ascii=False)
 
     if action == "write":
@@ -848,8 +1208,22 @@ def chat_summary(
 
 
 _ALL_TOOLS = [
-    chat_send, chat_read, chat_resync, chat_join, chat_who, chat_rules, chat_decision,
-    chat_channels, chat_set_hat, chat_claim, chat_summary, chat_propose_job,
+    chat_send,
+    chat_read,
+    chat_resync,
+    chat_join,
+    chat_who,
+    chat_rules,
+    chat_decision,
+    chat_channels,
+    chat_set_hat,
+    chat_claim,
+    chat_summary,
+    chat_propose_job,
+    chat_thread_list,
+    chat_thread_read,
+    chat_thread_create,
+    chat_thread_update,
 ]
 
 
@@ -867,7 +1241,7 @@ def _create_server(port: int) -> FastMCP:
 
 
 mcp_http = _create_server(8200)  # streamable-http for Claude/Codex
-mcp_sse = _create_server(8201)   # SSE for Gemini
+mcp_sse = _create_server(8201)  # SSE for Gemini
 
 # Keep backward compat — run.py references mcp_bridge.store
 # (store is set by run.py before starting)
@@ -881,4 +1255,3 @@ def run_http_server():
 def run_sse_server():
     """Block — run SSE MCP in a background thread."""
     mcp_sse.run(transport="sse")
-

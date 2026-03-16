@@ -35,15 +35,17 @@ SERVER_NAME = "agentchattr"
 # ---------------------------------------------------------------------------
 
 def _write_json_mcp_settings(config_file: Path, url: str, transport: str = "http",
-                              *, token: str = "") -> Path:
-    """Write/merge a settings-style JSON file with nested mcpServers config.
+                              *, token: str = "", server_key: str = "mcpServers",
+                              type_override: str = "") -> Path:
+    """Write/merge a settings-style JSON file with nested MCP config.
 
     Preserves existing servers in the file — only updates the agentchattr entry.
 
-    Gemini CLI 0.32+ expects:
-      - "httpUrl" key (not "url") for streamable-http transport
-      - "url" key for SSE transport
-      - "trust": true to skip per-call approval prompts
+    Args:
+        server_key: Top-level JSON key for the servers dict.
+            "mcpServers" for Gemini, "mcp" for Kilo CLI.
+        type_override: If set, use this as the "type" value instead of
+            deriving it from transport.
     """
     config_file.parent.mkdir(parents=True, exist_ok=True)
     existing: dict = {}
@@ -52,23 +54,27 @@ def _write_json_mcp_settings(config_file: Path, url: str, transport: str = "http
             existing = json.loads(config_file.read_text("utf-8"))
         except Exception:
             pass
-    servers = existing.get("mcpServers", {})
-    # Gemini CLI uses "httpUrl" for streamable-http, "url" for SSE
-    if transport in ("http", "streamable-http"):
-        entry: dict = {"type": "http", "httpUrl": url, "trust": True}
+    servers = existing.get(server_key, {})
+    entry_type = type_override or ("http" if transport in ("http", "streamable-http") else transport)
+    if transport in ("http", "streamable-http") and not type_override:
+        entry: dict = {"type": entry_type, "httpUrl": url}
     else:
-        entry = {"type": transport, "url": url, "trust": True}
+        entry = {"type": entry_type, "url": url}
+    # Gemini needs trust flag; Kilo CLI doesn't but it won't hurt
+    if server_key == "mcpServers":
+        entry["trust"] = True
     if token:
         entry["headers"] = {"Authorization": f"Bearer {token}"}
     servers[SERVER_NAME] = entry
-    existing["mcpServers"] = servers
+    existing[server_key] = servers
 
-    # Enable folder trust so ~/.gemini/trustedFolders.json is respected
-    security = existing.get("security", {})
-    folder_trust = security.get("folderTrust", {})
-    folder_trust["enabled"] = True
-    security["folderTrust"] = folder_trust
-    existing["security"] = security
+    # Gemini-specific: enable folder trust
+    if server_key == "mcpServers":
+        security = existing.get("security", {})
+        folder_trust = security.get("folderTrust", {})
+        folder_trust["enabled"] = True
+        security["folderTrust"] = folder_trust
+        existing["security"] = security
 
     config_file.write_text(json.dumps(existing, indent=2) + "\n", "utf-8")
     return config_file
@@ -141,6 +147,13 @@ _BUILTIN_DEFAULTS: dict[str, dict] = {
         "mcp_flag": "--mcp-config-file",
         "mcp_transport": "http",
     },
+    "kilo": {
+        "mcp_inject": "settings_file",
+        "mcp_settings_path": r"~\.config\kilo\opencode.json",
+        "mcp_transport": "sse",
+        "mcp_server_key": "mcp",
+        "mcp_type_override": "remote",
+    },
 }
 
 _VALID_INJECT_MODES = {"settings_file", "env", "flag", "proxy_flag"}
@@ -198,12 +211,15 @@ def _apply_mcp_inject(
         raw_path = inject_cfg.get("mcp_settings_path", "")
         if not raw_path:
             raise ValueError(f"mcp_inject = 'settings_file' requires mcp_settings_path")
-        target = Path(raw_path)
+        target = Path(raw_path).expanduser()
         if not target.is_absolute():
             base = Path(project_dir) if project_dir else Path.cwd()
             target = base / target
-        settings_path = _write_json_mcp_settings(target, server_url,
-                                                  transport=transport, token=token)
+        settings_path = _write_json_mcp_settings(
+            target, server_url, transport=transport, token=token,
+            server_key=inject_cfg.get("mcp_server_key", "mcpServers"),
+            type_override=inject_cfg.get("mcp_type_override", ""),
+        )
         # Optionally set an env var pointing to the settings file
         env_var = inject_cfg.get("mcp_env_var")
         if env_var:
@@ -450,7 +466,7 @@ def _queue_watcher(get_identity_fn, inject_fn, *, is_multi_instance: bool = Fals
                     elif job_id:
                         prompt = f"mcp read job_id={job_id} - you were mentioned in a job thread, take appropriate action"
                     else:
-                        prompt = f"mcp read #{channel} - you were mentioned, take appropriate action"
+                        prompt = f"mcp read #{channel} - you were mentioned, take appropriate action. After responding, resume your prior task if you had one."
 
                     # Use current identity (may have changed via rename)
                     current_name, _ = get_identity_fn()

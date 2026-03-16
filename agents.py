@@ -30,7 +30,7 @@ class AgentTrigger:
         }
 
     async def trigger(self, agent_name: str, message: str = "", channel: str = "general",
-                      job_id: int | None = None, **kwargs):
+                      job_id: int | None = None, thread_id: int | None = None, **kwargs):
         """Write to the agent's queue file. The worker terminal picks it up."""
         queue_file = self._data_dir / f"{agent_name}_queue.jsonl"
         self._data_dir.mkdir(parents=True, exist_ok=True)
@@ -42,6 +42,8 @@ class AgentTrigger:
             "time": time.strftime("%H:%M:%S"),
             "channel": channel,
         }
+        if thread_id is not None:
+            entry["thread_id"] = thread_id
         custom_prompt = kwargs.get("prompt", "")
         if isinstance(custom_prompt, str) and custom_prompt.strip():
             entry["prompt"] = custom_prompt.strip()
@@ -51,10 +53,10 @@ class AgentTrigger:
         with open(queue_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
 
-        log.info("Queued @%s trigger (ch=%s, job=%s): %s", agent_name, channel, job_id, message[:80])
+        log.info("Queued @%s trigger (ch=%s, job=%s, thread=%s): %s", agent_name, channel, job_id, thread_id, message[:80])
 
     def trigger_sync(self, agent_name: str, message: str = "", channel: str = "general",
-                     job_id: int | None = None, **kwargs):
+                     job_id: int | None = None, thread_id: int | None = None, **kwargs):
         """Synchronous version of trigger — writes to queue file without async."""
         queue_file = self._data_dir / f"{agent_name}_queue.jsonl"
         self._data_dir.mkdir(parents=True, exist_ok=True)
@@ -66,6 +68,8 @@ class AgentTrigger:
             "time": time.strftime("%H:%M:%S"),
             "channel": channel,
         }
+        if thread_id is not None:
+            entry["thread_id"] = thread_id
         custom_prompt = kwargs.get("prompt", "")
         if isinstance(custom_prompt, str) and custom_prompt.strip():
             entry["prompt"] = custom_prompt.strip()
@@ -75,4 +79,4 @@ class AgentTrigger:
         with open(queue_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
 
-        log.info("Queued @%s trigger (ch=%s, job=%s): %s", agent_name, channel, job_id, message[:80])
+        log.info("Queued @%s trigger (ch=%s, job=%s, thread=%s): %s", agent_name, channel, job_id, thread_id, message[:80])
