@@ -57,6 +57,7 @@ class ThreadStore:
         self,
         root_id: int,
         *,
+        title: str | None = None,
         owner: str | None = None,
         status: str | None = None,
         channel: str | None = None,
@@ -67,6 +68,8 @@ class ThreadStore:
         now = updated_at if updated_at is not None else time.time()
         with self._lock:
             record = dict(self._threads.get(key) or _default_thread_record(root_id))
+            if title is not None:
+                record["title"] = title
             if owner is not None:
                 record["owner"] = owner
             if status is not None:
@@ -207,6 +210,7 @@ def build_thread_index(
         state = thread_store.get(root_id) or _default_thread_record(root_id)
         thread = {
             "root_id": root_id,
+            "title": state.get("title", ""),
             "channel": root_message.get("channel", "general"),
             "owner": state.get("owner", ""),
             "status": state.get("status", "open"),
@@ -323,6 +327,7 @@ def _default_thread_record(root_id: int) -> dict:
     now = time.time()
     return {
         "root_id": int(root_id),
+        "title": "",
         "owner": "",
         "status": "open",
         "channel": "",
@@ -335,6 +340,7 @@ def _normalize_thread_record(record: dict) -> dict:
     normalized = _default_thread_record(int(record["root_id"]))
     normalized.update(record)
     normalized["root_id"] = int(normalized["root_id"])
+    normalized["title"] = str(normalized.get("title", ""))
     normalized["last_message_id"] = int(normalized.get("last_message_id", normalized["root_id"]))
     normalized["owner"] = str(normalized.get("owner", ""))
     normalized["status"] = str(normalized.get("status", "open"))

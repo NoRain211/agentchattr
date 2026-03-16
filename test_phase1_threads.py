@@ -122,6 +122,30 @@ class Phase1ThreadBackendTests(unittest.TestCase):
         self.assertFalse(visible_items[0]["unread"])
         self.assertTrue(visible_items[0]["done"])
 
+    def test_create_thread_api_creates_thread_record_from_explicit_root(self):
+        root = self.message_store.add("user", "Anchor this into a side thread", channel="general")
+        rebuild_thread_state(self.message_store.get_all(), self.thread_store)
+
+        response = self.client.post(
+            "/api/threads",
+            json={
+                "root_id": root["id"],
+                "title": "rabbit hole",
+                "created_by": "user",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["root_id"], root["id"])
+        self.assertEqual(payload["title"], "rabbit hole")
+        self.assertEqual(payload["channel"], "general")
+
+        thread = self.thread_store.get(root["id"])
+        self.assertIsNotNone(thread)
+        self.assertEqual(thread["owner"], "user")
+        self.assertEqual(thread["status"], "open")
+
 
 if __name__ == "__main__":
     unittest.main()

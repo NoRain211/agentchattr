@@ -25,9 +25,9 @@ from session_store import SessionStore, validate_session_template
 from session_engine import SessionEngine
 from thread_store import (
     ThreadStore,
-    build_inbox_view,
     build_thread_index,
     rebuild_thread_state,
+    resolve_thread_root_id,
     sync_thread_state_for_message,
 )
 
@@ -58,13 +58,14 @@ room_settings: dict = {
     "username": "user",
     "font": "sans",
     "channels": ["general"],
+    "archived_channels": [],
     "history_limit": "all",
     "contrast": "normal",
 }
 
 # Channel validation
 _CHANNEL_NAME_RE = _re.compile(r'^[a-z0-9][a-z0-9\-]{0,19}$')
-MAX_CHANNELS = 8
+MAX_CHANNELS = 0  # 0 = unlimited
 
 # Agent hats (persisted to data/hats.json)
 agent_hats: dict[str, str] = {}  # { agent_name: svg_string }
@@ -143,6 +144,9 @@ def _load_settings():
         room_settings["channels"] = ["general"]
     elif "general" not in room_settings["channels"]:
         room_settings["channels"].insert(0, "general")
+    # Ensure archived_channels exists
+    if "archived_channels" not in room_settings:
+        room_settings["archived_channels"] = []
 
 
 def _save_settings():
@@ -490,6 +494,23 @@ def _on_thread_state_message(msg: dict):
     if store is None or thread_state is None:
         return
     sync_thread_state_for_message(store, thread_state, msg)
+    # Broadcast thread update to all connected clients
+    root_id = msg.get("reply_to")
+    if root_id is not None and _event_loop is not None:
+        messages = store.get_all()
+        message_index = {int(m["id"]): m for m in messages}
+        resolved_root = resolve_thread_root_id(msg, message_index)
+        thread_record = thread_state.get(resolved_root)
+        if thread_record:
+            thread_record["root_id"] = resolved_root
+            try:
+                loop = asyncio.get_running_loop()
+                if loop is _event_loop:
+                    asyncio.ensure_future(broadcast_thread_update(thread_record))
+                    return
+            except RuntimeError:
+                pass
+            asyncio.run_coroutine_threadsafe(broadcast_thread_update(thread_record), _event_loop)
 
 
 def _on_thread_state_delete(_msg_ids: list[int]):
@@ -801,7 +822,8 @@ async def _handle_new_message(msg: dict):
         if not mcp_bridge.is_online(target):
             store.add("system", f"{target} appears offline — message queued.", msg_type="system", channel=channel)
         if agents.is_available(target):
-            await agents.trigger(target, message=chat_msg, channel=channel, prompt=custom_prompt)
+            thread_id = msg.get("thread_id")
+            await agents.trigger(target, message=chat_msg, channel=channel, prompt=custom_prompt, thread_id=thread_id)
 
 
 # --- broadcasting ---
@@ -857,6 +879,17 @@ async def broadcast_clear(channel: str | None = None):
     if channel:
         payload["channel"] = channel
     data = json.dumps(payload)
+    dead = set()
+    for client in list(ws_clients):
+        try:
+            await client.send_text(data)
+        except Exception:
+            dead.add(client)
+    ws_clients.difference_update(dead)
+
+
+async def broadcast_thread_update(thread_data: dict):
+    data = json.dumps({"type": "thread_update", "data": thread_data})
     dead = set()
     for client in list(ws_clients):
         try:
@@ -1019,7 +1052,7 @@ async def websocket_endpoint(websocket: WebSocket):
     
     history = []
     for ch in room_settings["channels"]:
-        history.extend(store.get_recent(count, channel=ch))
+        history.extend(store.get_recent(count, channel=ch, exclude_threads=True))
     
     # Sort history by timestamp to interleave messages from different channels correctly
     history.sort(key=lambda m: m.get("timestamp", 0))
@@ -1068,8 +1101,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 if reply_to is not None:
                     reply_to = int(reply_to)
 
+                thread_id = event.get("thread_id")
+                if thread_id is not None:
+                    thread_id = int(thread_id)
+
                 store.add(sender, text, attachments=attachments, reply_to=reply_to,
-                          channel=channel)
+                          channel=channel, thread_id=thread_id)
 
             elif event.get("type") == "delete":
                 ids = event.get("ids", [])
@@ -1294,7 +1331,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     continue
                 if name in room_settings["channels"]:
                     continue
-                if len(room_settings["channels"]) >= MAX_CHANNELS:
+                # If name exists in archived channels, unarchive it instead of creating new
+                if name in room_settings.get("archived_channels", []):
+                    room_settings["archived_channels"].remove(name)
+                    room_settings["channels"].append(name)
+                    _save_settings()
+                    await broadcast_settings()
+                    continue
+                if MAX_CHANNELS and len(room_settings["channels"]) >= MAX_CHANNELS:
                     continue
                 room_settings["channels"].append(name)
                 _save_settings()
@@ -1334,12 +1378,44 @@ async def websocket_endpoint(websocket: WebSocket):
                 name = (event.get("name") or "").strip().lower()
                 if name == "general":
                     continue
-                if name not in room_settings["channels"]:
+                in_active = name in room_settings["channels"]
+                in_archived = name in room_settings.get("archived_channels", [])
+                if not in_active and not in_archived:
                     continue
-                room_settings["channels"].remove(name)
+                if in_active:
+                    room_settings["channels"].remove(name)
+                if in_archived:
+                    room_settings["archived_channels"].remove(name)
                 store.delete_channel(name)
                 import mcp_bridge
                 mcp_bridge.migrate_cursors_delete(name)
+                _save_settings()
+                await broadcast_settings()
+
+            elif event.get("type") == "channel_archive":
+                name = (event.get("name") or "").strip().lower()
+                if name == "general":
+                    continue
+                if name not in room_settings["channels"]:
+                    continue
+                # Move from active to archived
+                room_settings["channels"].remove(name)
+                if name not in room_settings.get("archived_channels", []):
+                    room_settings["archived_channels"].append(name)
+                _save_settings()
+                await broadcast_settings()
+
+            elif event.get("type") == "channel_unarchive":
+                name = (event.get("name") or "").strip().lower()
+                if name not in room_settings.get("archived_channels", []):
+                    continue
+                # Check max channels limit
+                if MAX_CHANNELS and len(room_settings["channels"]) >= MAX_CHANNELS:
+                    continue
+                # Move from archived to active
+                room_settings["archived_channels"].remove(name)
+                if name not in room_settings["channels"]:
+                    room_settings["channels"].append(name)
                 _save_settings()
                 await broadcast_settings()
 
@@ -1384,8 +1460,8 @@ async def upload_image(file: UploadFile = File(...)):
 async def get_messages(since_id: int = 0, limit: int = 50, channel: str = ""):
     ch = channel if channel else None
     if since_id:
-        return store.get_since(since_id, channel=ch)
-    return store.get_recent(limit, channel=ch)
+        return store.get_since(since_id, channel=ch, exclude_threads=True)
+    return store.get_recent(limit, channel=ch, exclude_threads=True)
 
 
 @app.get("/api/threads")
@@ -1394,6 +1470,69 @@ async def get_threads(channel: str = "", owner: str = "", status: str = ""):
     own = owner.strip() or None
     st = status.strip() or None
     return build_thread_index(store.get_all(), thread_state, channel=ch, owner=own, status=st)
+
+
+@app.post("/api/threads")
+async def create_thread(request: Request):
+    body = await request.json()
+    root_id = body.get("root_id")
+    title = str(body.get("title", "")).strip()
+    created_by = str(body.get("created_by", room_settings.get("username", "user"))).strip()
+    if root_id is None:
+        return JSONResponse({"error": "root_id is required"}, status_code=400)
+
+    try:
+        root_id = int(root_id)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "root_id must be an integer"}, status_code=400)
+
+    root_message = store.get_by_id(root_id)
+    if not root_message:
+        return JSONResponse({"error": "thread root not found"}, status_code=404)
+
+    existing = thread_state.get(root_id) or {}
+    payload = {
+        "root_id": root_id,
+        "title": title,
+        "owner": created_by or existing.get("owner", ""),
+        "status": existing.get("status", "open"),
+        "channel": root_message.get("channel", "general"),
+        "last_message_id": existing.get("last_message_id", root_id),
+    }
+    updated = thread_state.update_thread(
+        root_id,
+        title=title if title else existing.get("title", ""),
+        owner=payload["owner"],
+        status=payload["status"],
+        channel=payload["channel"],
+        last_message_id=payload["last_message_id"],
+    )
+    updated = thread_state.get(root_id) or updated
+    updated["root_id"] = root_id
+    await broadcast_thread_update(updated)
+    return JSONResponse(updated)
+
+
+@app.get("/api/threads/{root_id}/messages")
+async def get_thread_messages(root_id: int):
+    all_msgs = store.get_all()
+    message_index = {int(m["id"]): m for m in all_msgs}
+    root_msg = message_index.get(root_id)
+    if not root_msg:
+        return JSONResponse({"error": "thread root not found"}, status_code=404)
+    thread_msgs = [
+        m for m in all_msgs
+        if resolve_thread_root_id(m, message_index) == root_id
+    ]
+    thread_msgs.sort(key=lambda m: m["id"])
+    thread_record = thread_state.get(root_id) or {}
+    return {
+        "root_id": root_id,
+        "title": thread_record.get("title", ""),
+        "status": thread_record.get("status", "open"),
+        "owner": thread_record.get("owner", ""),
+        "messages": thread_msgs,
+    }
 
 
 @app.patch("/api/threads/{root_id}")
@@ -1416,44 +1555,9 @@ async def patch_thread(root_id: int, request: Request):
         channel=root_message.get("channel", "general"),
         last_message_id=(existing or {}).get("last_message_id", root_id),
     )
+    updated["root_id"] = root_id
+    await broadcast_thread_update(updated)
     return JSONResponse(updated)
-
-
-@app.get("/api/inbox")
-async def get_inbox(actor: str = "", filter: str = "", include_done: bool = False, channel: str = ""):
-    if store is None or thread_state is None:
-        return JSONResponse({"error": "inbox backend unavailable"}, status_code=503)
-    actor_name = actor.strip() or room_settings.get("username", "user")
-    ch = channel if channel else None
-    return build_inbox_view(
-        store.get_all(),
-        thread_state,
-        actor=actor_name,
-        channel=ch,
-        filter_kind=filter.strip() or None,
-        include_done=include_done,
-    )
-
-
-def _update_inbox_item_state(item_id: str, actor: str, *, unread: bool | None = None, done: bool | None = None):
-    if thread_state is None:
-        return JSONResponse({"error": "inbox backend unavailable"}, status_code=503)
-    actor_name = actor.strip() or room_settings.get("username", "user")
-    try:
-        updated = thread_state.update_inbox_item_state(actor_name, item_id, unread=unread, done=done)
-    except ValueError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
-    return JSONResponse(updated)
-
-
-@app.post("/api/inbox/{item_id}/read")
-async def mark_inbox_item_read(item_id: str, actor: str = ""):
-    return _update_inbox_item_state(item_id, actor, unread=False)
-
-
-@app.post("/api/inbox/{item_id}/done")
-async def mark_inbox_item_done(item_id: str, actor: str = ""):
-    return _update_inbox_item_state(item_id, actor, unread=False, done=True)
 
 
 @app.post("/api/send")

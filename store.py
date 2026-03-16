@@ -50,7 +50,7 @@ class MessageStore:
 
     def add(self, sender: str, text: str, msg_type: str = "chat",
             attachments: list | None = None, reply_to: int | None = None,
-            channel: str = "general",
+            channel: str = "general", thread_id: int | None = None,
             metadata: dict | None = None) -> dict:
         with self._lock:
             msg = {
@@ -65,6 +65,8 @@ class MessageStore:
             }
             if reply_to is not None:
                 msg["reply_to"] = reply_to
+            if thread_id is not None:
+                msg["thread_id"] = thread_id
             if metadata:
                 msg["metadata"] = metadata
             self._next_id += 1
@@ -90,25 +92,32 @@ class MessageStore:
                     return m
             return None
 
-    def get_recent(self, count: int = 50, channel: str | None = None) -> list[dict]:
+    def get_recent(self, count: int = 50, channel: str | None = None, exclude_threads: bool = False) -> list[dict]:
         with self._lock:
             msgs = self._messages
             if channel:
                 msgs = [m for m in msgs if m.get("channel", "general") == channel]
+            if exclude_threads:
+                # Exclude messages that belong to a thread (only show root messages in channel timeline)
+                msgs = [m for m in msgs if not m.get("thread_id")]
             return list(msgs[-count:])
 
-    def get_all(self, channel: str | None = None) -> list[dict]:
+    def get_all(self, channel: str | None = None, exclude_threads: bool = False) -> list[dict]:
         with self._lock:
             msgs = self._messages
             if channel:
                 msgs = [m for m in msgs if m.get("channel", "general") == channel]
+            if exclude_threads:
+                msgs = [m for m in msgs if not m.get("thread_id")]
             return list(msgs)
 
-    def get_since(self, since_id: int = 0, channel: str | None = None) -> list[dict]:
+    def get_since(self, since_id: int = 0, channel: str | None = None, exclude_threads: bool = False) -> list[dict]:
         with self._lock:
             msgs = [m for m in self._messages if m["id"] > since_id]
             if channel:
                 msgs = [m for m in msgs if m.get("channel", "general") == channel]
+            if exclude_threads:
+                msgs = [m for m in msgs if not m.get("thread_id")]
             return msgs
 
     def delete(self, msg_ids: list[int]) -> list[int]:
