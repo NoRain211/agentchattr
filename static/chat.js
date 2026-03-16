@@ -371,7 +371,6 @@ function connectWebSocket() {
                 playNotificationSound(event.data.sender);
             }
             appendMessage(event.data);
-            if (window.refreshInboxView) window.refreshInboxView({ renderIfOpen: true });
         } else if (event.type === 'agent_renamed') {
             // Migrate active mentions before the agents config rebuild
             if (activeMentions.has(event.old_name)) {
@@ -453,7 +452,6 @@ function connectWebSocket() {
                 if (loader) loader.classList.add('hidden');
                 filterMessagesByChannel();
                 renderChannelTabs();
-                if (window.refreshInboxView) window.refreshInboxView({ renderIfOpen: false });
                 // Ensure refresh/reconnect lands on the latest visible message.
                 requestAnimationFrame(() => {
                     autoScroll = true;
@@ -466,7 +464,6 @@ function connectWebSocket() {
             applySettings(event.data);
         } else if (event.type === 'delete') {
             handleDeleteBroadcast(event.ids);
-            if (window.refreshInboxView) window.refreshInboxView({ renderIfOpen: true });
         } else if (event.type === 'rules' || event.type === 'decisions') {
             rules = event.data || [];
             renderRulesPanel();
@@ -504,7 +501,6 @@ function connectWebSocket() {
                 localStorage.setItem('agentchattr-channel', event.new_name);
                 Store.set('activeChannel', event.new_name);
             }
-            if (window.refreshInboxView) window.refreshInboxView({ renderIfOpen: true });
         } else if (event.type === 'edit') {
             // A message was edited/demoted — re-render it in place
             const updatedMsg = event.message;
@@ -527,7 +523,6 @@ function connectWebSocket() {
                     }
                 }
             }
-            if (window.refreshInboxView) window.refreshInboxView({ renderIfOpen: true });
         } else if (event.type === 'clear') {
             const _clearDbgList = document.getElementById('jobs-list');
             const _clearDbgBefore = _clearDbgList ? _clearDbgList.children.length : -1;
@@ -556,7 +551,6 @@ function connectWebSocket() {
                 const _clearDbgAfter = _clearDbgList ? _clearDbgList.children.length : -1;
                 console.log('CLEAR_DEBUG after clear (next frame), jobs-panel-children=' + _clearDbgAfter);
             });
-            if (window.refreshInboxView) window.refreshInboxView({ renderIfOpen: true });
         }
     };
 
@@ -636,7 +630,6 @@ function appendMessage(msg) {
     const el = document.createElement('div');
     el.className = 'message';
     el.dataset.id = msg.id;
-    if (msg.reply_to != null) el.dataset.replyTo = msg.reply_to;
     const msgChannel = msg.channel || 'general';
     el.dataset.channel = msgChannel;
 
@@ -764,7 +757,8 @@ function appendMessage(msg) {
         const senderRole = _agentRoles[msg.sender] || '';
         const roleClass = senderRole ? 'bubble-role has-role' : 'bubble-role';
         const rolePillHtml = !isSelf ? `<button class="${roleClass}" onclick="showBubbleRolePicker(this, '${escapeHtml(msg.sender)}')" title="${senderRole ? escapeHtml(senderRole) : 'Set role'}">${senderRole || 'choose a role'}</button>` : '';
-        el.innerHTML = `<div class="todo-strip"></div>${isSelf ? '' : avatarHtml}<div class="chat-bubble" style="--bubble-color: ${senderColor}">${replyHtml}<div class="bubble-header"><span class="msg-sender" style="color: ${senderColor}">${escapeHtml(msg.sender)}</span>${rolePillHtml}<span class="msg-time">${msg.time || ''}</span></div><div class="msg-text">${textHtml}</div>${attachmentsHtml}<button class="convert-job-pill" onclick="startJobFromMessage(${msg.id}); event.stopPropagation();" title="Convert to job">convert to job</button><button class="bubble-copy" onclick="copyMessage(${msg.id}, event)" title="Copy message"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div><div class="msg-actions"><button class="reply-btn" onclick="startReply(${msg.id}, event)">reply</button><button class="todo-hint" onclick="todoCycle(${msg.id}); event.stopPropagation();">${statusLabel}</button><button class="delete-btn" onclick="deleteClick(${msg.id}, event)" title="Delete">del</button></div>`;
+        const editedHtml = msg.edited_at ? `<span class="msg-edited" title="Edited at ${escapeHtml(msg.edited_at)}${msg.original_text ? ' — original: ' + escapeHtml(msg.original_text.slice(0, 100)) : ''}">(edited)</span>` : '';
+        el.innerHTML = `<div class="todo-strip"></div>${isSelf ? '' : avatarHtml}<div class="chat-bubble" style="--bubble-color: ${senderColor}">${replyHtml}<div class="bubble-header"><span class="msg-sender" style="color: ${senderColor}">${escapeHtml(msg.sender)}</span>${rolePillHtml}<span class="msg-time">${msg.time || ''}${editedHtml}</span></div><div class="msg-text">${textHtml}</div>${attachmentsHtml}<button class="convert-job-pill" onclick="startJobFromMessage(${msg.id}); event.stopPropagation();" title="Convert to job">convert to job</button><button class="bubble-copy" onclick="copyMessage(${msg.id}, event)" title="Copy message"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div><div class="msg-actions"><button class="reply-btn" onclick="startReply(${msg.id}, event)">reply</button><button class="todo-hint" onclick="todoCycle(${msg.id}); event.stopPropagation();">${statusLabel}</button><button class="delete-btn" onclick="deleteClick(${msg.id}, event)" title="Delete">del</button></div>`;
         if (todoStatus) el.classList.add('msg-todo', `msg-todo-${todoStatus}`);
         if (msg.metadata?.session_output) el.classList.add('session-output');
 
@@ -1395,7 +1389,6 @@ function applySettings(data) {
         username = data.username;
         document.getElementById('sender-label').textContent = username;
         document.getElementById('setting-username').value = username;
-        if (window.refreshInboxView) window.refreshInboxView({ renderIfOpen: true });
     }
     if (data.font) {
         document.body.classList.remove('font-mono', 'font-serif', 'font-sans');
@@ -1414,6 +1407,12 @@ function applySettings(data) {
     }
     if (data.rules_refresh_interval !== undefined) {
         document.getElementById('setting-rules-refresh').value = String(data.rules_refresh_interval);
+    }
+    if (data.channel_topics) {
+        window._channelTopics = data.channel_topics;
+    }
+    if (data.archived_channels !== undefined) {
+        window._archivedChannels = data.archived_channels || [];
     }
     if (data.channels && Array.isArray(data.channels)) {
         channelList = data.channels;
@@ -1555,6 +1554,7 @@ const SLASH_COMMANDS = [
     { cmd: '/poetry sonnet', desc: 'Agents write a sonnet about the codebase', broadcast: true },
     { cmd: '/summary', desc: 'Summarize recent messages — tag an agent (e.g. /summary @claude)', broadcast: false, needsMention: true },
     { cmd: '/summarise', desc: 'Summarize recent messages — tag an agent (e.g. /summarise @claude)', broadcast: false, needsMention: true, hidden: true },
+    { cmd: '/thread', desc: 'Create a thread from the selected reply target', broadcast: false },
     { cmd: '/continue', desc: 'Resume after loop guard pauses', broadcast: false },
     { cmd: '/clear', desc: 'Clear messages in current channel', broadcast: false },
 ];
@@ -1789,11 +1789,46 @@ function setupInput() {
     });
 }
 
-function sendMessage() {
+function _parseThreadTitle(text) {
+    const match = text.match(/^\/thread(?:\s+(.+))?$/i);
+    if (!match) return '';
+    const raw = (match[1] || '').trim();
+    if (!raw) return '';
+    const quoted = raw.match(/^"(.*)"$/);
+    return quoted ? quoted[1].trim() : raw;
+}
+
+async function sendMessage() {
     const input = document.getElementById('input');
     let text = input.value.trim();
 
     if (!text && pendingAttachments.length === 0) return;
+
+    // Handle /thread command early (before mention prepend)
+    if (text.toLowerCase().startsWith('/thread')) {
+        if (!replyingTo) {
+            showSlashHint('Reply to a message first, then use /thread "topic"');
+            return;
+        }
+        if (typeof window.createThreadFromRoot !== 'function') {
+            showSlashHint('Thread creation is not ready yet');
+            return;
+        }
+
+        const title = _parseThreadTitle(text) || `Thread on message #${replyingTo.id}`;
+        const created = await window.createThreadFromRoot(replyingTo.id, title);
+        if (!created) {
+            showSlashHint('Failed to create thread');
+            return;
+        }
+
+        input.value = '';
+        input.style.height = 'auto';
+        clearAttachments();
+        cancelReply();
+        input.focus();
+        return;
+    }
 
     // Prepend active mention toggles if the message doesn't already mention them
     // Skip for non-broadcast slash commands (e.g. /clear, /continue)
