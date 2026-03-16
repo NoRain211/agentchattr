@@ -1,0 +1,432 @@
+/* Collapsible Sidebar Styles */
+
+/* Base sidebar transitions */
+#sidebar {
+    transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow-x: hidden;
+}
+
+/* Collapsed state - rail mode */
+#sidebar.collapsed {
+    width: 48px;
+    min-width: 48px;
+}
+
+/* Toggle button */
+.sidebar-toggle {
+    position: absolute;
+    right: 4px;
+    top: 8px;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted, #888);
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 150ms ease, background 150ms ease, color 150ms ease;
+    z-index: 10;
+}
+
+#sidebar:hover .sidebar-toggle,
+.sidebar-toggle:focus {
+    opacity: 1;
+}
+
+.sidebar-toggle:hover {
+    background: var(--hover-bg, rgba(255,255,255,0.05));
+    color: var(--text-primary, #fff);
+}
+
+#sidebar.collapsed .sidebar-toggle {
+    right: 50%;
+    transform: translateX(50%);
+}
+
+/* Inbox section */
+.sidebar-inbox {
+    transition: padding 250ms ease, margin 250ms ease;
+}
+
+#sidebar.collapsed .sidebar-inbox {
+    padding: 12px 0;
+    justify-content: center;
+}
+
+#sidebar.collapsed .sidebar-inbox-label {
+    display: none;
+}
+
+#sidebar.collapsed .sidebar-inbox-icon {
+    font-size: 20px;
+}
+
+/* Inbox badge positioning in collapsed state */
+#sidebar.collapsed .sidebar-inbox-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    min-width: 16px;
+    height: 16px;
+    font-size: 10px;
+    padding: 0 4px;
+}
+
+/* Section header */
+.sidebar-section-header {
+    transition: opacity 250ms ease, height 250ms ease, padding 250ms ease;
+    overflow: hidden;
+}
+
+#sidebar.collapsed .sidebar-section-header {
+    opacity: 0;
+    height: 0;
+    padding: 0;
+    margin: 0;
+}
+
+/* Channel tabs container */
+#channel-tabs {
+    transition: opacity 250ms ease;
+}
+
+/* Channel items */
+.channel-tab {
+    transition: padding 250ms ease, justify-content 250ms ease;
+}
+
+#sidebar.collapsed .channel-tab {
+    padding: 10px 0;
+    justify-content: center;
+}
+
+#sidebar.collapsed .channel-tab .channel-name {
+    display: none;
+}
+
+#sidebar.collapsed .channel-tab .channel-icon {
+    display: flex;
+}
+
+/* Channel icon (shown only when collapsed) */
+.channel-icon {
+    display: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, var(--channel-color, #4a9eff), var(--channel-color-dark, #2d7cd6));
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 12px;
+    color: white;
+    text-transform: uppercase;
+}
+
+/* Unread badge in collapsed state */
+#sidebar.collapsed .channel-tab .unread-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 14px;
+    height: 14px;
+    font-size: 9px;
+    padding: 0 3px;
+}
+
+#sidebar.collapsed .channel-tab {
+    position: relative;
+}
+
+/* Footer */
+.sidebar-footer {
+    transition: opacity 250ms ease;
+}
+
+#sidebar.collapsed .sidebar-footer {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Tooltip for collapsed state */
+.sidebar-tooltip {
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%) translateX(8px);
+    background: var(--bg-secondary, #1a1a2e);
+    color: var(--text-primary, #fff);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 150ms ease, visibility 150ms ease;
+    z-index: 100;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+}
+
+.sidebar-tooltip::before {
+    content: '';
+    position: absolute;
+    left: -6px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 6px solid transparent;
+    border-right-color: var(--bg-secondary, #1a1a2e);
+}
+
+#sidebar.collapsed .channel-tab:hover .sidebar-tooltip,
+#sidebar.collapsed .sidebar-inbox:hover .sidebar-tooltip {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Archived channels section */
+.archived-section {
+    margin-top: 8px;
+    border-top: 1px solid var(--border-color, rgba(255,255,255,0.05));
+    padding-top: 8px;
+}
+
+.archived-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted, #888);
+    cursor: pointer;
+    user-select: none;
+    transition: color 150ms ease;
+}
+
+.archived-header:hover {
+    color: var(--text-primary, #fff);
+}
+
+.archived-header .toggle-icon {
+    transition: transform 200ms ease;
+}
+
+.archived-header.collapsed .toggle-icon {
+    transform: rotate(-90deg);
+}
+
+.archived-channels {
+    overflow: hidden;
+    transition: max-height 250ms ease, opacity 250ms ease;
+    max-height: 500px;
+    opacity: 1;
+}
+
+.archived-channels.collapsed {
+    max-height: 0;
+    opacity: 0;
+}
+
+/* Context menu for channel actions */
+.channel-context-menu {
+    position: absolute;
+    background: var(--bg-secondary, #1a1a2e);
+    border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+    border-radius: 8px;
+    padding: 4px;
+    min-width: 160px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transform: scale(0.95);
+    transition: opacity 150ms ease, visibility 150ms ease, transform 150ms ease;
+}
+
+.channel-context-menu.visible {
+    opacity: 1;
+    visibility: visible;
+    transform: scale(1);
+}
+
+.channel-context-menu button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    color: var(--text-primary, #fff);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 150ms ease;
+}
+
+.channel-context-menu button:hover {
+    background: var(--hover-bg, rgba(255,255,255,0.05));
+}
+
+.channel-context-menu button.delete {
+    color: #ff6b6b;
+}
+
+.channel-context-menu button.delete:hover {
+    background: rgba(255,107,107,0.1);
+}
+
+/* Archive confirmation modal */
+.archive-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 200ms ease, visibility 200ms ease;
+}
+
+.archive-modal-overlay.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.archive-modal {
+    background: var(--bg-primary, #0f0f17);
+    border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 360px;
+    width: 90%;
+    transform: scale(0.95);
+    transition: transform 200ms ease;
+}
+
+.archive-modal-overlay.visible .archive-modal {
+    transform: scale(1);
+}
+
+.archive-modal h3 {
+    margin: 0 0 12px 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.archive-modal p {
+    margin: 0 0 20px 0;
+    color: var(--text-muted, #888);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.archive-modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.archive-modal-actions button {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 150ms ease;
+}
+
+.archive-modal-actions .btn-secondary {
+    background: var(--bg-secondary, #1a1a2e);
+    color: var(--text-primary, #fff);
+}
+
+.archive-modal-actions .btn-secondary:hover {
+    background: var(--hover-bg, rgba(255,255,255,0.1));
+}
+
+.archive-modal-actions .btn-danger {
+    background: #ff6b6b;
+    color: white;
+}
+
+.archive-modal-actions .btn-danger:hover {
+    background: #ff5252;
+}
+
+/* Keyboard shortcut hint */
+.sidebar-shortcut-hint {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    background: var(--bg-secondary, #1a1a2e);
+    color: var(--text-muted, #888);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 300ms ease;
+    pointer-events: none;
+    z-index: 100;
+}
+
+.sidebar-shortcut-hint.visible {
+    opacity: 1;
+}
+
+/* Archived channel styling */
+.channel-tab.archived {
+    opacity: 0.6;
+}
+
+.channel-tab.archived:hover {
+    opacity: 0.9;
+}
+
+/* Empty archived state */
+.archived-channels:empty::before {
+    content: 'No archived channels';
+    display: block;
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted, #888);
+    font-size: 13px;
+    font-style: italic;
+}
+
+/* Channel icon gradient backgrounds */
+.channel-icon {
+    flex-shrink: 0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    #sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        z-index: 100;
+        transform: translateX(-100%);
+    }
+    
+    #sidebar.visible {
+        transform: translateX(0);
+    }
+    
+    #sidebar.collapsed {
+        width: 240px;
+        transform: translateX(-100%);
+    }
+}

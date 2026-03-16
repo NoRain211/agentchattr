@@ -7,6 +7,9 @@
     <link rel="stylesheet" href="/static/style.css?v=195">
     <link rel="stylesheet" href="/static/sessions.css?v=195">
     <link rel="stylesheet" href="/static/jobs.css?v=195">
+    <link rel="stylesheet" href="/static/sidebar.css?v=1">
+    <link rel="stylesheet" href="/static/thread-styles.css?v=1">
+    <link rel="stylesheet" href="/static/threads-panel.css?v=2">
     <link rel="icon" href="/static/favicon.ico">
 </head>
 <body>
@@ -36,6 +39,12 @@
                         <path d="M5 8L7 10L11 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
                     </svg>
                     <span class="rules-badge hidden" id="rules-badge">0</span>
+                </button>
+                <button class="settings-btn" id="threads-toggle" onclick="toggleThreadsPanel()" title="Threads">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M2 3h12M2 7h12M2 11h8"/>
+                    </svg>
+                    <span class="threads-badge hidden" id="threads-badge">0</span>
                 </button>
                 <button class="settings-btn" id="pins-toggle" onclick="togglePinsPanel()" title="Pinned messages">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -111,14 +120,9 @@
 
         <div id="app-body">
         <aside id="sidebar">
-            <div class="sidebar-inbox" id="sidebar-inbox" onclick="switchToInbox()">
-                <span class="sidebar-inbox-icon">&#x1F4EC;</span>
-                <span class="sidebar-inbox-label">Inbox</span>
-                <span class="sidebar-inbox-badge hidden" id="inbox-badge">0</span>
-            </div>
             <div class="sidebar-section-header">
                 <span>Channels</span>
-                <button class="sidebar-add-btn" onclick="showChannelCreateDialog()" title="Add channel">+</button>
+                <button id="channel-add-btn" class="sidebar-add-btn" onclick="showChannelCreateDialog()" title="Add channel">+</button>
             </div>
             <div id="channel-tabs" class="sidebar-channels"></div>
             <div class="sidebar-footer">
@@ -188,6 +192,35 @@
                     </div>
                 </div>
             </aside>
+            <aside id="threads-panel" class="hidden">
+                <div class="threads-grip" id="threads-grip"></div>
+                <div id="threads-list-view">
+                    <div class="threads-header">
+                        <span>Threads</span>
+                        <button class="threads-filter-btn" onclick="showThreadsFilter()" title="Filter">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M2 4h12M4 4v8M6 8h4M12 4v8"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="threads-list"></div>
+                </div>
+                <div id="threads-detail-view" class="hidden">
+                    <div class="threads-detail-header">
+                        <button class="threads-back-btn" onclick="closeThreadDetail()" title="Back">&larr;</button>
+                        <span class="threads-detail-title" id="threads-detail-title"></span>
+                        <div class="threads-detail-actions" id="threads-detail-actions"></div>
+                    </div>
+                    <div class="threads-detail-messages" id="threads-detail-messages"></div>
+                    <div class="threads-detail-input">
+                        <div class="job-input-row">
+                            <textarea id="threads-detail-input-text" placeholder="Reply to thread..." rows="1"></textarea>
+                            <button onclick="sendThreadReply()">Send</button>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
             <aside id="rules-panel" class="hidden">
                 <div class="rules-grip" id="rules-grip"></div>
                 <div class="rules-header">
@@ -245,8 +278,10 @@
     <script src="/static/store.js?v=195"></script>
     <script src="/static/sessions.js?v=195"></script>
     <script src="/static/jobs.js?v=195"></script>
-    <script src="/static/channels.js?v=195"></script>
+    <script src="/static/channels.js?v=196"></script>
     <script src="/static/rules-panel.js?v=195"></script>
-    <script src="/static/chat.js?v=195"></script>
+    <script src="/static/chat.js?v=198"></script>
+    <script src="/static/sidebar.js?v=198"></script>
+    <script src="/static/threads.js?v=198"></script>
 </body>
 </html>
