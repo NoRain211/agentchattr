@@ -624,6 +624,12 @@ function maybeInsertDateDivider(container, msg) {
 function appendMessage(msg) {
     const container = document.getElementById('messages');
 
+    // Skip thread replies in main channel feed — they only appear in thread panel
+    // (threads.js _handleThreadMessage will update the thread stub on the root message)
+    if (msg.thread_id) {
+        return;
+    }
+
     // Insert date divider if needed
     maybeInsertDateDivider(container, msg);
 

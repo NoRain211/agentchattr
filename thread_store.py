@@ -104,34 +104,48 @@ def extract_mentions(text: str) -> list[str]:
 
 
 def rebuild_thread_state(messages: list[dict], thread_store: ThreadStore):
+    """Refresh metadata for explicitly created threads only.
+
+    Does NOT auto-create threads for every message — only updates threads
+    that already exist in the store (created via POST /api/threads).
+    """
+    existing = {record["root_id"]: record for record in thread_store.list_all()}
+    if not existing:
+        return
     message_index = _message_index(messages)
     grouped: dict[int, list[dict]] = {}
     for message in messages:
         root_id = resolve_thread_root_id(message, message_index)
-        grouped.setdefault(root_id, []).append(message)
+        if root_id in existing:
+            grouped.setdefault(root_id, []).append(message)
 
-    prior = {record["root_id"]: record for record in thread_store.list_all()}
     records = []
-    for root_id, group in grouped.items():
+    for root_id, prior in existing.items():
+        group = grouped.get(root_id, [])
         group.sort(key=lambda message: message["id"])
-        root_message = message_index[root_id]
-        previous = prior.get(root_id, {})
         records.append({
             "root_id": root_id,
-            "owner": previous.get("owner", ""),
-            "status": previous.get("status", "open"),
-            "channel": root_message.get("channel", "general"),
-            "last_message_id": group[-1]["id"],
-            "updated_at": group[-1].get("timestamp", time.time()),
+            "owner": prior.get("owner", ""),
+            "status": prior.get("status", "open"),
+            "channel": prior.get("channel", ""),
+            "last_message_id": group[-1]["id"] if group else prior.get("last_message_id", root_id),
+            "updated_at": group[-1].get("timestamp", time.time()) if group else prior.get("updated_at", time.time()),
         })
     thread_store.replace_all(records)
 
 
 def sync_thread_state_for_message(message_store, thread_store: ThreadStore, message: dict):
+    """Update thread metadata when a new message arrives.
+
+    Only updates threads that already exist in the store — does NOT
+    auto-create threads for every message.
+    """
     messages = message_store.get_all()
     message_index = _message_index(messages)
     root_id = resolve_thread_root_id(message, message_index)
-    existing = thread_store.get(root_id) or {}
+    existing = thread_store.get(root_id)
+    if not existing:
+        return  # Not part of an explicit thread — skip
     thread_store.update_thread(
         root_id,
         owner=existing.get("owner", ""),
@@ -150,18 +164,32 @@ def build_thread_index(
     owner: str | None = None,
     status: str | None = None,
 ) -> list[dict]:
+    """Build thread index for only explicitly created threads.
+
+    Only returns threads that exist in the store — not every message chain.
+    """
+    explicit_threads = thread_store.list_all(channel=channel, owner=owner, status=status)
+    if not explicit_threads:
+        return []
+
+    explicit_root_ids = {record["root_id"] for record in explicit_threads}
     scoped = [message for message in messages if not channel or message.get("channel", "general") == channel]
     message_index = _message_index(scoped)
+
     grouped: dict[int, list[dict]] = {}
     for message in scoped:
         root_id = resolve_thread_root_id(message, message_index)
-        grouped.setdefault(root_id, []).append(message)
+        if root_id in explicit_root_ids:
+            grouped.setdefault(root_id, []).append(message)
 
     threads = []
-    for root_id, group in grouped.items():
+    for state in explicit_threads:
+        root_id = state["root_id"]
+        group = grouped.get(root_id, [])
         group.sort(key=lambda message: message["id"])
-        root_message = message_index[root_id]
-        state = thread_store.get(root_id) or _default_thread_record(root_id)
+        root_message = message_index.get(root_id)
+        if not root_message:
+            continue
         thread = {
             "root_id": root_id,
             "title": state.get("title", ""),
@@ -170,15 +198,11 @@ def build_thread_index(
             "status": state.get("status", "open"),
             "message_count": len(group),
             "reply_count": max(0, len(group) - 1),
-            "last_message_id": state.get("last_message_id", group[-1]["id"]),
-            "updated_at": state.get("updated_at", group[-1].get("timestamp", 0)),
+            "last_message_id": state.get("last_message_id", group[-1]["id"] if group else root_id),
+            "updated_at": state.get("updated_at", group[-1].get("timestamp", 0) if group else 0),
             "participants": sorted({message.get("sender", "") for message in group if message.get("sender")}),
             "root_message": _compact_message(root_message),
         }
-        if owner and thread["owner"] != owner:
-            continue
-        if status and thread["status"] != status:
-            continue
         threads.append(thread)
 
     threads.sort(key=lambda thread: (thread["last_message_id"], thread["root_id"]), reverse=True)

@@ -27,6 +27,7 @@ function toggleThreadsPanel() {
     document.getElementById('threads-toggle')?.classList.toggle('active', _threadsPanelOpen);
     if (_threadsPanelOpen) {
         _loadThreadList();
+        _refreshThreadStubs();
     }
 }
 
@@ -501,6 +502,35 @@ function _updateThreadsBadge() {
 }
 
 // ---------------------------------------------------------------------------
+// Refresh thread stubs on visible messages
+// ---------------------------------------------------------------------------
+
+async function _refreshThreadStubs() {
+    const channel = window.activeChannel || 'general';
+    try {
+        const resp = await fetch(`/api/threads?channel=${encodeURIComponent(channel)}`, { 
+            headers: { 'X-Session-Token': window.SESSION_TOKEN } 
+        });
+        if (!resp.ok) return;
+        const threads = await resp.json();
+        
+        for (const thread of threads) {
+            const rootId = thread.root_id;
+            const replyCount = thread.reply_count || 0;
+            const status = thread.status || 'open';
+            
+            const rootEl = document.querySelector(`.message[data-id="${rootId}"]`);
+            if (rootEl) {
+                const existing = rootEl.querySelector('.thread-reply-badge');
+                if (!existing && replyCount > 0) {
+                    addThreadStubToMessage(rootEl, { reply_count: replyCount, status });
+                }
+            }
+        }
+    } catch (e) { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
 // Keyboard shortcut for reply input
 // ---------------------------------------------------------------------------
 
@@ -602,3 +632,4 @@ window.closeThreadDetail = closeThreadDetail;
 window.sendThreadReply = sendThreadReply;
 window.addThreadStubToMessage = addThreadStubToMessage;
 window.createThreadFromRoot = _createThread;
+window.refreshThreadStubs = _refreshThreadStubs;

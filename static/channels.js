@@ -126,6 +126,10 @@ function switchChannel(name) {
     filterMessagesByChannel();
     renderChannelTabs();
     Store.set('activeChannel', name);
+    // Refresh thread stubs for the new channel
+    if (window.refreshThreadStubs) {
+        window.refreshThreadStubs();
+    }
     // Restore: scroll to saved message, or bottom if none saved
     const savedId = _channelScrollMsg[name];
     if (savedId) {
