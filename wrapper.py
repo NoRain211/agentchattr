@@ -80,6 +80,22 @@ def _write_json_mcp_settings(config_file: Path, url: str, transport: str = "http
     return config_file
 
 
+def _read_native_mcp_servers(agent: str) -> set[str]:
+    """Read MCP server names already configured in the agent's native config."""
+    config_paths = {
+        "codex": Path.home() / ".codex" / "config.toml",
+    }
+    config_file = config_paths.get(agent)
+    if not config_file or not config_file.exists():
+        return set()
+    try:
+        import re as _re
+        text = config_file.read_text("utf-8")
+        return set(_re.findall(r'\[mcp_servers\.(\S+?)\]', text))
+    except Exception:
+        return set()
+
+
 def _read_project_mcp_servers(project_dir: Path) -> dict:
     """Read existing MCP servers from the project's .mcp.json."""
     mcp_file = project_dir / ".mcp.json"
@@ -93,6 +109,25 @@ def _read_project_mcp_servers(project_dir: Path) -> dict:
         except Exception:
             pass
     return {}
+
+
+def _merge_project_servers_into_settings(
+    settings_path: Path, project_dir: Path, *, server_key: str = "mcpServers",
+) -> None:
+    """Merge project MCP servers from .mcp.json into an existing settings file."""
+    project_servers = _read_project_mcp_servers(project_dir)
+    if not project_servers:
+        return
+    try:
+        data = json.loads(settings_path.read_text("utf-8"))
+    except Exception:
+        data = {}
+    servers = data.get(server_key, {})
+    for name, cfg in project_servers.items():
+        if name not in servers:
+            servers[name] = cfg
+    data[server_key] = servers
+    settings_path.write_text(json.dumps(data, indent=2) + "\n", "utf-8")
 
 
 def _write_claude_mcp_config(
@@ -137,15 +172,18 @@ _BUILTIN_DEFAULTS: dict[str, dict] = {
         "mcp_inject": "env",
         "mcp_env_var": "GEMINI_CLI_SYSTEM_SETTINGS_PATH",
         "mcp_transport": "http",  # streamable-http; SSE has blocking issues in Gemini 0.32.x
+        "mcp_merge_project": True,
     },
     "codex": {
         "mcp_inject": "proxy_flag",
         "mcp_proxy_flag_template": '-c mcp_servers.{server}.url="{url}"',
+        "mcp_merge_project": True,
     },
     "kimi": {
         "mcp_inject": "flag",
         "mcp_flag": "--mcp-config-file",
         "mcp_transport": "http",
+        "mcp_merge_project": True,
     },
     "kilo": {
         "mcp_inject": "settings_file",
@@ -215,11 +253,18 @@ def _apply_mcp_inject(
         if not target.is_absolute():
             base = Path(project_dir) if project_dir else Path.cwd()
             target = base / target
+        server_key = inject_cfg.get("mcp_server_key", "mcpServers")
+        type_ov = inject_cfg.get("mcp_type_override", "")
         settings_path = _write_json_mcp_settings(
             target, server_url, transport=transport, token=token,
-            server_key=inject_cfg.get("mcp_server_key", "mcpServers"),
-            type_override=inject_cfg.get("mcp_type_override", ""),
+            server_key=server_key, type_override=type_ov,
         )
+        # Merge project MCP servers from .mcp.json
+        merge_project = inject_cfg.get("mcp_merge_project", False)
+        if merge_project and project_dir and settings_path:
+            _merge_project_servers_into_settings(
+                settings_path, project_dir, server_key=server_key,
+            )
         # Optionally set an env var pointing to the settings file
         env_var = inject_cfg.get("mcp_env_var")
         if env_var:
@@ -234,6 +279,10 @@ def _apply_mcp_inject(
             config_dir / f"{instance_name}-settings.json",
             server_url, transport=transport, token=token,
         )
+        # Merge project MCP servers from .mcp.json
+        merge_project = inject_cfg.get("mcp_merge_project", False)
+        if merge_project and project_dir and settings_path:
+            _merge_project_servers_into_settings(settings_path, project_dir)
         inject_env[env_var] = str(settings_path)
 
     elif mode == "flag":
@@ -253,6 +302,20 @@ def _apply_mcp_inject(
                                   '-c mcp_servers.{server}.url="{url}"')
         expanded = template.format(server=SERVER_NAME, url=proxy_url or "")
         launch_args = expanded.split()
+        # Also inject project MCP servers from .mcp.json
+        # Read the agent's native config to avoid conflicts with existing entries
+        merge_project = inject_cfg.get("mcp_merge_project", False)
+        if merge_project and project_dir:
+            # Strip instance suffix (e.g. "codex-2" → "codex")
+            parts = instance_name.rsplit("-", 1)
+            base_agent = parts[0] if len(parts) == 2 and parts[1].isdigit() else instance_name
+            native_servers = _read_native_mcp_servers(base_agent)
+            for name, cfg in _read_project_mcp_servers(project_dir).items():
+                if name in native_servers:
+                    continue  # agent already has this server configured natively
+                srv_url = cfg.get("url", "")
+                if srv_url:
+                    launch_args += ["-c", f'mcp_servers.{name}.url="{srv_url}"']
 
     return launch_args, inject_env, settings_path
 
