@@ -86,7 +86,13 @@ class ThreadStore:
             }
             self._save()
 
-    def list_all(self, *, channel: str | None = None, owner: str | None = None, status: str | None = None) -> list[dict]:
+    def list_all(
+        self,
+        *,
+        channel: str | None = None,
+        owner: str | None = None,
+        status: str | None = None,
+    ) -> list[dict]:
         with self._lock:
             records = [dict(record) for record in self._threads.values()]
         if channel:
@@ -95,7 +101,10 @@ class ThreadStore:
             records = [record for record in records if record.get("owner") == owner]
         if status:
             records = [record for record in records if record.get("status") == status]
-        records.sort(key=lambda record: (record.get("updated_at", 0), record.get("root_id", 0)), reverse=True)
+        records.sort(
+            key=lambda record: (record.get("updated_at", 0), record.get("root_id", 0)),
+            reverse=True,
+        )
         return records
 
 
@@ -123,18 +132,26 @@ def rebuild_thread_state(messages: list[dict], thread_store: ThreadStore):
     for root_id, prior in existing.items():
         group = grouped.get(root_id, [])
         group.sort(key=lambda message: message["id"])
-        records.append({
-            "root_id": root_id,
-            "owner": prior.get("owner", ""),
-            "status": prior.get("status", "open"),
-            "channel": prior.get("channel", ""),
-            "last_message_id": group[-1]["id"] if group else prior.get("last_message_id", root_id),
-            "updated_at": group[-1].get("timestamp", time.time()) if group else prior.get("updated_at", time.time()),
-        })
+        records.append(
+            {
+                "root_id": root_id,
+                "owner": prior.get("owner", ""),
+                "status": prior.get("status", "open"),
+                "channel": prior.get("channel", ""),
+                "last_message_id": group[-1]["id"]
+                if group
+                else prior.get("last_message_id", root_id),
+                "updated_at": group[-1].get("timestamp", time.time())
+                if group
+                else prior.get("updated_at", time.time()),
+            }
+        )
     thread_store.replace_all(records)
 
 
-def sync_thread_state_for_message(message_store, thread_store: ThreadStore, message: dict):
+def sync_thread_state_for_message(
+    message_store, thread_store: ThreadStore, message: dict
+):
     """Update thread metadata when a new message arrives.
 
     Only updates threads that already exist in the store — does NOT
@@ -168,12 +185,18 @@ def build_thread_index(
 
     Only returns threads that exist in the store — not every message chain.
     """
-    explicit_threads = thread_store.list_all(channel=channel, owner=owner, status=status)
+    explicit_threads = thread_store.list_all(
+        channel=channel, owner=owner, status=status
+    )
     if not explicit_threads:
         return []
 
     explicit_root_ids = {record["root_id"] for record in explicit_threads}
-    scoped = [message for message in messages if not channel or message.get("channel", "general") == channel]
+    scoped = [
+        message
+        for message in messages
+        if not channel or message.get("channel", "general") == channel
+    ]
     message_index = _message_index(scoped)
 
     grouped: dict[int, list[dict]] = {}
@@ -198,14 +221,26 @@ def build_thread_index(
             "status": state.get("status", "open"),
             "message_count": len(group),
             "reply_count": max(0, len(group) - 1),
-            "last_message_id": state.get("last_message_id", group[-1]["id"] if group else root_id),
-            "updated_at": state.get("updated_at", group[-1].get("timestamp", 0) if group else 0),
-            "participants": sorted({message.get("sender", "") for message in group if message.get("sender")}),
+            "last_message_id": group[-1]["id"]
+            if group
+            else state.get("last_message_id", root_id),
+            "updated_at": group[-1].get("timestamp", 0)
+            if group
+            else state.get("updated_at", 0),
+            "participants": sorted(
+                {
+                    message.get("sender", "")
+                    for message in group
+                    if message.get("sender")
+                }
+            ),
             "root_message": _compact_message(root_message),
         }
         threads.append(thread)
 
-    threads.sort(key=lambda thread: (thread["last_message_id"], thread["root_id"]), reverse=True)
+    threads.sort(
+        key=lambda thread: (thread["last_message_id"], thread["root_id"]), reverse=True
+    )
     return threads
 
 
@@ -257,7 +292,9 @@ def _normalize_thread_record(record: dict) -> dict:
     normalized.update(record)
     normalized["root_id"] = int(normalized["root_id"])
     normalized["title"] = str(normalized.get("title", ""))
-    normalized["last_message_id"] = int(normalized.get("last_message_id", normalized["root_id"]))
+    normalized["last_message_id"] = int(
+        normalized.get("last_message_id", normalized["root_id"])
+    )
     normalized["owner"] = str(normalized.get("owner", ""))
     normalized["status"] = str(normalized.get("status", "open"))
     normalized["channel"] = str(normalized.get("channel", ""))

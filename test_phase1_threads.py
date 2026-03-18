@@ -23,12 +23,25 @@ class Phase1ThreadBackendTests(unittest.TestCase):
 
     def test_build_thread_index_groups_reply_chain_under_root(self):
         root = self.message_store.add("user", "Root message", channel="general")
-        reply_a = self.message_store.add("claude", "Reply A", reply_to=root["id"], channel="general")
-        reply_b = self.message_store.add("kimi", "Reply B", reply_to=reply_a["id"], channel="general")
+        reply_a = self.message_store.add(
+            "claude", "Reply A", reply_to=root["id"], channel="general"
+        )
+        reply_b = self.message_store.add(
+            "kimi", "Reply B", reply_to=reply_a["id"], channel="general"
+        )
         other = self.message_store.add("codex", "Separate root", channel="general")
 
-        rebuild_thread_state(self.message_store.get_all(), self.thread_store)
-        threads = build_thread_index(self.message_store.get_all(), self.thread_store, channel="general")
+        self.thread_store.update_thread(root["id"], title="Root thread", owner="user")
+        self.thread_store.update_thread(
+            root["id"], title="Root thread", owner="user", channel="general"
+        )
+        self.thread_store.update_thread(
+            other["id"], title="Other thread", owner="codex", channel="general"
+        )
+
+        threads = build_thread_index(
+            self.message_store.get_all(), self.thread_store, channel="general"
+        )
 
         self.assertEqual([t["root_id"] for t in threads], [other["id"], root["id"]])
 
@@ -37,6 +50,21 @@ class Phase1ThreadBackendTests(unittest.TestCase):
         self.assertEqual(grouped["reply_count"], 2)
         self.assertEqual(grouped["last_message_id"], reply_b["id"])
         self.assertEqual(grouped["participants"], ["claude", "kimi", "user"])
+
+    def test_build_thread_index_excludes_messages_without_explicit_thread(self):
+        root = self.message_store.add("user", "Root message", channel="general")
+        reply_a = self.message_store.add(
+            "claude", "Reply A", reply_to=root["id"], channel="general"
+        )
+        orphan = self.message_store.add(
+            "codex", "Orphan reply", reply_to=root["id"], channel="general"
+        )
+
+        threads = build_thread_index(
+            self.message_store.get_all(), self.thread_store, channel="general"
+        )
+
+        self.assertEqual(threads, [])
 
     def test_thread_store_persists_owner_and_status(self):
         root = self.message_store.add("user", "Root", channel="general")
@@ -52,7 +80,9 @@ class Phase1ThreadBackendTests(unittest.TestCase):
         self.assertEqual(thread["status"], "resolved")
 
     def test_create_thread_api_creates_thread_record_from_explicit_root(self):
-        root = self.message_store.add("user", "Anchor this into a side thread", channel="general")
+        root = self.message_store.add(
+            "user", "Anchor this into a side thread", channel="general"
+        )
         rebuild_thread_state(self.message_store.get_all(), self.thread_store)
 
         response = self.client.post(
