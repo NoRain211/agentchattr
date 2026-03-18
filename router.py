@@ -73,6 +73,13 @@ class Router:
             # Don't route back to self
             return [m for m in mentions if m != sender]
 
+    def increment_hop(self, channel: str = "general"):
+        """Increment hop counter for reply-aware routing (agent→agent replies)."""
+        ch = self._get_ch(channel)
+        ch["hop_count"] += 1
+        if ch["hop_count"] > self.max_hops:
+            ch["paused"] = True
+
     def continue_routing(self, channel: str = "general"):
         """Resume after loop guard pause."""
         ch = self._get_ch(channel)

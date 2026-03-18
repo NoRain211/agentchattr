@@ -777,6 +777,24 @@ async def _handle_new_message(msg: dict):
             )
 
     raw_targets = router.get_targets(sender, text, channel)
+
+    # Reply-aware routing: if reply_to is set, auto-add the original sender
+    # as a target so replies trigger the agent being replied to.
+    reply_to_id = msg.get("reply_to")
+    if reply_to_id is not None and store:
+        parent = store.get_by_id(reply_to_id)
+        if parent:
+            parent_sender = parent.get("sender", "").lower()
+            if parent_sender and parent_sender != "system" and parent_sender != sender.lower() and parent_sender not in raw_targets:
+                # Agent→agent replies must respect the loop guard
+                sender_is_agent = sender.lower() in known_agents
+                if sender_is_agent:
+                    router.increment_hop(channel)
+                    if router.is_paused(channel):
+                        parent_sender = None  # suppress — loop guard active
+                if parent_sender:
+                    raw_targets.append(parent_sender)
+
     # Resolve base family names to actual registered instances
     # e.g. 'claude' → 'claude-prime' when slot-1 was renamed
     targets = []
