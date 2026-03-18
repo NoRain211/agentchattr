@@ -37,7 +37,7 @@ function toggleThreadsPanel() {
 async function _loadThreadList() {
     const channel = window.activeChannel || 'general';
     try {
-        const resp = await fetch(`/api/threads?channel=${encodeURIComponent(channel)}`);
+        const resp = await fetch(`/api/threads?channel=${encodeURIComponent(channel)}`, { headers: { 'X-Session-Token': window.SESSION_TOKEN } });
         if (!resp.ok) {
             // Try building from thread_store
             _threadIndex = [];
@@ -122,7 +122,7 @@ async function _openThreadDetail(rootId) {
 
     // Fetch thread messages
     try {
-        const resp = await fetch(`/api/threads/${rootId}/messages`);
+        const resp = await fetch(`/api/threads/${rootId}/messages`, { headers: { 'X-Session-Token': window.SESSION_TOKEN } });
         if (!resp.ok) throw new Error('Thread not found');
         const data = await resp.json();
 
@@ -196,7 +196,7 @@ async function _cycleThreadStatus(rootId, current) {
     try {
         await fetch(`/api/threads/${rootId}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-Session-Token': window.SESSION_TOKEN },
             body: JSON.stringify({ status: next }),
         });
         if (_threadCache[rootId]) {
@@ -407,7 +407,7 @@ async function _createThread(rootMsgId, title) {
     try {
         const resp = await fetch('/api/threads', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-Session-Token': window.SESSION_TOKEN },
             body: JSON.stringify({
                 root_id: rootMsgId,
                 title: title,
